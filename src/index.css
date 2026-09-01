@@ -1,0 +1,157 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Orbitron", "Rajdhani", sans-serif;
+  --font-heading: "Rajdhani", sans-serif;
+  --font-body: "Inter", sans-serif;
+
+  --color-w2w-black: #0a0a0b;
+  --color-w2w-black-soft: #121214;
+  --color-w2w-charcoal: #1a1a1d;
+  --color-w2w-charcoal-light: #232327;
+  /* Brand accent — "w2w-red" is a legacy name (kept so bg-w2w-red/text-w2w-red/etc. across the
+     app don't all need renaming), the actual color is racing blue. */
+  --color-w2w-red: #2e6ff2;
+  --color-w2w-red-bright: #4f8cff;
+  --color-w2w-red-dark: #1a3fa6;
+  --color-w2w-white: #f5f5f5;
+
+  /* Always-white text sitting directly on the accent background (buttons, active tab pills) —
+     deliberately NOT part of the light/dark swap below, since that background never changes
+     between themes, so its text shouldn't either. See the "text-on-accent" note there. */
+  --color-on-accent: #ffffff;
+
+  /* Chart chrome (grid lines, axis text/lines) for the hand-rolled SVG and Recharts-based charts
+     — referenced via CSS var() in inline styles/SVG attributes rather than Tailwind classes,
+     since those charts are built with JS color strings, not className. */
+  --color-chart-grid: rgba(255, 255, 255, 0.08);
+  --color-chart-axis: rgba(255, 255, 255, 0.4);
+  --color-chart-axis-line: rgba(255, 255, 255, 0.15);
+
+  /* Podium position colors (see lib/podium.ts) — used as TEXT color, unlike the driver/chart
+     palettes above which are only ever fills, so these need real per-theme contrast, not just
+     categorical distinctness. The dark-mode values read fine as light metallics on a dark card;
+     the light-mode override (below) darkens each one so it doesn't wash out on a white card —
+     silver in particular would be nearly invisible as light-gray-on-white otherwise. */
+  --color-podium-gold: #e8c34a;
+  --color-podium-silver: #c7cbd1;
+  --color-podium-bronze: #cd8a4e;
+}
+
+/* Accent color swatches (see AccentContext + AccentPicker) — "blue" is the default (the base
+   @theme values above), these are the opt-in alternatives, activated by data-accent="…" on the
+   root element. Bright/dark are lighter/darker steps of the same hue (bright for hover states,
+   dark for the scrollbar thumb's resting color), matching the relationship the default blue
+   already has between its own three steps. Each base tone was checked to keep --color-on-accent
+   white text reasonably legible when used as a button background — "green" here is a darker step
+   than a first-instinct emerald for exactly that reason (a lighter green tested under ~2.6:1
+   contrast with white text, well short of even the large-text 3:1 floor). */
+:root[data-accent="red"] {
+  --color-w2w-red: #e10600;
+  --color-w2w-red-bright: #ff2a1f;
+  --color-w2w-red-dark: #8a0300;
+}
+:root[data-accent="green"] {
+  --color-w2w-red: #059669;
+  --color-w2w-red-bright: #10b981;
+  --color-w2w-red-dark: #064e3b;
+}
+:root[data-accent="racing-green"] {
+  --color-w2w-red: #1b7a4d;
+  --color-w2w-red-bright: #2f9966;
+  --color-w2w-red-dark: #0f4a2e;
+}
+:root[data-accent="purple"] {
+  --color-w2w-red: #7c3aed;
+  --color-w2w-red-bright: #8b5cf6;
+  --color-w2w-red-dark: #5b21b6;
+}
+:root[data-accent="orange"] {
+  --color-w2w-red: #ea580c;
+  --color-w2w-red-bright: #f97316;
+  --color-w2w-red-dark: #9a3412;
+}
+:root[data-accent="teal"] {
+  --color-w2w-red: #0891b2;
+  --color-w2w-red-bright: #06b6d4;
+  --color-w2w-red-dark: #155e75;
+}
+:root[data-accent="pink"] {
+  --color-w2w-red: #db2777;
+  --color-w2w-red-bright: #ec4899;
+  --color-w2w-red-dark: #831843;
+}
+
+/* Dark is this app's default/base theme (declared above, unconditionally) — light is the
+   opt-in override, activated by data-theme="light" on the root element (see ThemeContext).
+   `--color-white`/`--color-black` are Tailwind's own built-in tokens, redeclared here because
+   the app uses raw text-white/N, border-white/N, bg-white/N utilities pervasively as its ink/
+   border/wash system — redefining --color-white cascades through every one of those utilities
+   at once (Tailwind v4 compiles opacity utilities as color-mix(in oklab, var(--color-white) N%,
+   transparent), which re-evaluates live), so this is the one central place that needs to change
+   rather than touching every file that uses them. --color-on-accent is deliberately exempt: the
+   ~20 spots where white text sits on a solid bg-w2w-red button use that token instead of
+   text-white specifically so this swap can't turn button text unreadable in light mode. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-white: #141414;
+  --color-w2w-black: #f6f6f5;
+  --color-w2w-black-soft: #efeeec;
+  --color-w2w-charcoal: #ffffff;
+  --color-w2w-charcoal-light: #e8e8e6;
+  --color-w2w-white: #141414;
+  --color-chart-grid: rgba(0, 0, 0, 0.08);
+  --color-chart-axis: rgba(0, 0, 0, 0.45);
+  --color-chart-axis-line: rgba(0, 0, 0, 0.15);
+  --color-podium-gold: #9a7500;
+  --color-podium-silver: #6b7280;
+  --color-podium-bronze: #a15a24;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-w2w-black);
+  color: var(--color-w2w-white);
+  font-family: var(--font-body);
+}
+
+::selection {
+  background-color: var(--color-w2w-red);
+  color: var(--color-on-accent);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-w2w-black);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-w2w-red-dark);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-w2w-red);
+}
+
+.clip-corner {
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+
+.input {
+  width: 100%;
+  background-color: var(--color-w2w-black);
+  border: 1px solid color-mix(in oklab, var(--color-white) 15%, transparent);
+  padding: 0.75rem 1rem;
+  color: var(--color-w2w-white);
+  font-size: 0.875rem;
+  font-family: var(--font-body);
+}
+.input:focus {
+  outline: none;
+  border-color: var(--color-w2w-red);
+}
