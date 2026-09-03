@@ -12,6 +12,7 @@ export default function SeriesListPage() {
   const [series, setSeries] = useState<IracingSeriesSeason[] | null>(null);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,12 +31,15 @@ export default function SeriesListPage() {
 
   const categories = Array.from(new Set((series ?? []).map((s) => s.category).filter((c): c is string => !!c))).sort();
 
+  const archivedCount = (series ?? []).filter((s) => !s.active).length;
+
   const filtered = (series ?? []).filter((season) => {
     const matchesSearch =
       season.seriesName.toLowerCase().includes(search.toLowerCase()) ||
       (season.category ?? '').toLowerCase().includes(search.toLowerCase());
     const matchesCategory = categoryFilter === '' || season.category === categoryFilter;
-    return matchesSearch && matchesCategory;
+    const matchesArchived = showArchived || season.active;
+    return matchesSearch && matchesCategory && matchesArchived;
   });
 
   return (
@@ -96,13 +100,25 @@ export default function SeriesListPage() {
                 </option>
               ))}
             </select>
+            {archivedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowArchived((v) => !v)}
+                aria-pressed={showArchived}
+                className={`px-3 py-2 font-heading text-xs uppercase tracking-wide transition-colors shrink-0 ${
+                  showArchived ? 'bg-w2w-red text-on-accent' : 'bg-w2w-charcoal text-white/65 hover:text-white'
+                }`}
+              >
+                {showArchived ? 'Hide' : 'Show'} Archived ({archivedCount})
+              </button>
+            )}
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((season) => (
               <Link
                 key={season.seasonId}
                 to={`/series/${season.seasonId}`}
-                className="bg-w2w-charcoal border border-white/10 hover:border-w2w-red/50 p-5 transition-colors flex items-center gap-4"
+                className={`bg-w2w-charcoal border border-white/10 hover:border-w2w-red/50 p-5 transition-colors flex items-center gap-4 ${season.active ? '' : 'opacity-60'}`}
               >
                 {season.logoUrl ? (
                   <img
@@ -114,7 +130,14 @@ export default function SeriesListPage() {
                   <div className="h-12 w-12 bg-black/30 shrink-0" />
                 )}
                 <div className="min-w-0">
-                  <p className="font-heading font-semibold text-white text-sm truncate">{season.seriesName}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-heading font-semibold text-white text-sm truncate">{season.seriesName}</p>
+                    {!season.active && (
+                      <span className="px-1.5 py-0.5 text-[10px] font-heading uppercase tracking-wide bg-white/10 text-white/65 shrink-0">
+                        Archived
+                      </span>
+                    )}
+                  </div>
                   {season.category && <p className="text-white/65 text-xs mt-0.5 uppercase">{season.category}</p>}
                   <p className="text-white/65 text-xs mt-2">
                     {season.schedule.length} race week{season.schedule.length === 1 ? '' : 's'}

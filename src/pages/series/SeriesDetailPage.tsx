@@ -97,10 +97,22 @@ export default function SeriesDetailPage() {
             <img src={season.logoUrl} alt="" className="h-16 w-16 object-contain bg-black/30 shrink-0" />
           )}
           <div>
-            <h1 className="font-display font-black text-2xl uppercase text-w2w-white">{season.seriesName}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-display font-black text-2xl uppercase text-w2w-white">{season.seriesName}</h1>
+              {!season.active && (
+                <span className="px-1.5 py-0.5 text-[10px] font-heading uppercase tracking-wide bg-white/10 text-white/65">
+                  Archived
+                </span>
+              )}
+            </div>
             <p className="text-white/65 text-sm mt-1">
               {[season.category, season.seasonName].filter(Boolean).join(' · ')}
             </p>
+            {!season.active && (
+              <p className="text-white/65 text-xs mt-1 max-w-md">
+                This season has ended — a newer season of this series has taken over car-usage tracking.
+              </p>
+            )}
           </div>
         </div>
         {user?.role === 'ADMIN' && (

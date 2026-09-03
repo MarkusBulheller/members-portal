@@ -47,7 +47,7 @@ export default function RaceResultShareCard({ result }: { result: RaceResult }) 
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: 4, textTransform: 'uppercase' }}>
-          W2<span style={{ color: '#2e6ff2' }}>W</span> Racing
+          W<span style={{ color: '#2e6ff2' }}>2</span>W Racing
         </div>
         {result.seriesName && (
           <div style={{ fontSize: 13, letterSpacing: 2, textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)' }}>

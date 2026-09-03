@@ -6,7 +6,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       <div className="w-full max-w-md">
         <div className="flex items-center justify-center gap-2 mb-8">
           <span className="font-display font-black text-2xl tracking-widest text-w2w-white">
-            W2<span className="text-w2w-red">W</span>
+            W<span className="text-w2w-red">2</span>W
           </span>
           <span className="h-5 w-px bg-white/20" />
           <span className="font-heading text-xs tracking-[0.3em] text-white/65 uppercase">Members</span>

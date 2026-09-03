@@ -12,6 +12,7 @@ import { driversApi } from '../../lib/api/drivers';
 import { raceResultsApi } from '../../lib/api/raceResults';
 import { formatDuration } from '../../lib/lapTime';
 import { licenseClassStyle } from '../../lib/iracingClass';
+import { formatTimezoneLabel } from '../../lib/timezone';
 import { usePagination } from '../../lib/usePagination';
 import type { AchievementAward, AchievementDefinition, AchievementMetric } from '../../types/achievement';
 import type { DriverProfile } from '../../types/driver';
@@ -129,8 +130,9 @@ export default function DriverDetailPage() {
             <p className="text-white/65 text-xs">"{driver.displayName}"</p>
           )}
           <p className="text-white/65 text-sm">
-            {[driver.iracingLocation ?? driver.country, driver.preferredClasses].filter(Boolean).join(' · ') ||
-              'No details set'}
+            {[driver.iracingLocation ?? driver.country, driver.preferredClasses, formatTimezoneLabel(driver.timezone)]
+              .filter(Boolean)
+              .join(' · ') || 'No details set'}
           </p>
           {(driver.startingDriver || driver.wetDriver || driver.nightDriver || driver.maxSuccessiveStints !== null) && (
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
@@ -157,9 +159,9 @@ export default function DriverDetailPage() {
             </div>
           )}
         </div>
-        {user?.role === 'ADMIN' && !driver.userId && (
+        {user?.role === 'ADMIN' && (
           <Link
-            to={`/drivers/${driver.id}/edit`}
+            to={driver.userId ? `/drivers/${driver.id}/edit-settings` : `/drivers/${driver.id}/edit`}
             className="px-4 py-2 border border-white/20 text-white/70 hover:text-white hover:border-white/40 font-heading text-xs uppercase tracking-wide transition-colors shrink-0"
           >
             Edit

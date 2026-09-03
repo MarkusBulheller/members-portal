@@ -72,6 +72,7 @@ export interface CreateManualDriverInput {
   sportsCarSafetyRating?: string;
   country?: string;
   preferredClasses?: string;
+  timezone?: string;
   bio?: string;
   maxSuccessiveStints?: number;
   startingDriver?: boolean;
@@ -83,6 +84,8 @@ export interface UpdateManualDriverInput {
   displayName?: string;
   country?: string;
   preferredClasses?: string;
+  /** null explicitly clears a previously-set timezone; omitting the field leaves it untouched. */
+  timezone?: string | null;
   bio?: string;
   maxSuccessiveStints?: number | null;
   startingDriver?: boolean;

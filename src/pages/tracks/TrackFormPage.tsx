@@ -58,7 +58,7 @@ export default function TrackFormPage() {
       name: track.configName ? `${track.trackName} - ${track.configName}` : track.trackName,
       category: track.category ?? form.category,
       location: track.location ?? form.location,
-      imageUrl: track.smallImageUrl ?? undefined,
+      imageUrl: track.logoUrl ?? undefined,
     });
   }
 
@@ -183,8 +183,15 @@ export default function TrackFormPage() {
                       onClick={() => pickTrack(track)}
                       className="w-full flex items-center gap-3 text-left px-3 py-2 text-sm text-white/70 hover:bg-white/5 hover:text-white transition-colors"
                     >
-                      {track.smallImageUrl ? (
-                        <img src={track.smallImageUrl} alt="" className="h-8 w-12 object-cover shrink-0 bg-black/30" />
+                      {track.logoUrl ? (
+                        <img
+                          src={track.logoUrl}
+                          alt=""
+                          className="h-8 w-12 object-contain shrink-0 bg-black/30"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
                       ) : (
                         <div className="h-8 w-12 shrink-0 bg-black/30" />
                       )}

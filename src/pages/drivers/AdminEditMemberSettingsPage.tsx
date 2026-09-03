@@ -1,32 +1,25 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import CountryFlag from '../../components/CountryFlag';
 import TimezoneAutocomplete from '../../components/TimezoneAutocomplete';
 import { driversApi } from '../../lib/api/drivers';
-import { beginIracingLink } from '../../lib/iracing';
 import { licenseClassStyle } from '../../lib/iracingClass';
 import type { DriverProfile } from '../../types/driver';
 
-const BROWSER_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-export default function EditMyProfilePage() {
+/** Admin override of a linked member's own settings (timezone, race preferences, etc.) — same
+ * fields as EditMyProfilePage, minus the iRacing-link button, since only the member's own
+ * browser can start that OAuth round-trip. Manual (unlinked) drivers are edited via the separate
+ * DriverFormPage instead — see DriverDetailPage's Edit link. */
+export default function AdminEditMemberSettingsPage() {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const justLinked = searchParams.get('iracing') === 'linked';
   const [profile, setProfile] = useState<DriverProfile | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void driversApi.getOwn().then(setProfile);
-  }, []);
-
-  function handleLinkClick() {
-    setError(null);
-    beginIracingLink().catch((err: unknown) => {
-      setError(err instanceof Error ? `Could not start iRacing sign-in: ${err.message}` : 'Could not start iRacing sign-in.');
-    });
-  }
+    if (id) void driversApi.getById(id).then(setProfile);
+  }, [id]);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -34,7 +27,7 @@ export default function EditMyProfilePage() {
     setSaving(true);
     setError(null);
     try {
-      const updated = await driversApi.updateOwn({
+      const updated = await driversApi.updateSettingsAsAdmin(profile.id, {
         displayName: profile.displayName,
         country: profile.country ?? undefined,
         timezone: profile.timezone,
@@ -45,10 +38,9 @@ export default function EditMyProfilePage() {
         wetDriver: profile.wetDriver,
         nightDriver: profile.nightDriver,
       });
-      setProfile(updated);
       navigate(`/drivers/${updated.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save profile');
+      setError(err instanceof Error ? err.message : 'Failed to save settings');
     } finally {
       setSaving(false);
     }
@@ -60,36 +52,23 @@ export default function EditMyProfilePage() {
 
   return (
     <div className="max-w-xl">
-      <p className="font-heading text-xs tracking-[0.3em] text-w2w-red uppercase mb-2">Your Profile</p>
-      <h1 className="font-display font-black text-3xl uppercase text-w2w-white mb-8">Edit Profile</h1>
+      <p className="font-heading text-xs tracking-[0.3em] text-w2w-red uppercase mb-2">Admin</p>
+      <h1 className="font-display font-black text-3xl uppercase text-w2w-white mb-8">
+        Edit {profile.iracingName ?? profile.displayName}'s Settings
+      </h1>
 
-      {justLinked && (
-        <p className="mb-6 text-sm text-w2w-red bg-w2w-red/10 border border-w2w-red/30 px-4 py-3">
-          Your iRacing account is now linked.
+      {error && (
+        <p role="alert" className="mb-6 text-sm text-w2w-red bg-w2w-red/10 border border-w2w-red/30 px-4 py-3">
+          {error}
         </p>
       )}
 
-      {error && (
-        <p className="mb-6 text-sm text-w2w-red bg-w2w-red/10 border border-w2w-red/30 px-4 py-3">{error}</p>
-      )}
-
-      <div className="mb-8 bg-w2w-charcoal border border-white/10 p-5">
-        <div className="flex items-center justify-between mb-1">
-          <p className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">iRacing Account</p>
-          <button
-            onClick={handleLinkClick}
-            className={
-              profile.iracingCustomerId
-                ? 'text-xs text-white/65 hover:text-white'
-                : 'px-4 py-2 bg-w2w-red hover:bg-w2w-red-bright text-on-accent font-heading font-bold text-xs uppercase tracking-wide transition-colors clip-corner'
-            }
-          >
-            {profile.iracingCustomerId ? 'Re-link' : 'Link iRacing Account'}
-          </button>
-        </div>
-
-        {profile.iracingCustomerId ? (
-          <div className="mt-3 grid grid-cols-2 gap-4">
+      {profile.iracingCustomerId && (
+        <div className="mb-8 bg-w2w-charcoal border border-white/10 p-5">
+          <p className="font-heading text-xs tracking-[0.2em] uppercase text-white/65 mb-3">
+            iRacing Account (read-only — only {profile.displayName} can re-link it)
+          </p>
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="font-heading text-[10px] tracking-[0.2em] uppercase text-white/65">Name</p>
               <p className="text-white text-sm">{profile.iracingName ?? '—'}</p>
@@ -118,22 +97,9 @@ export default function EditMyProfilePage() {
                 <p className="text-white text-sm">—</p>
               )}
             </div>
-            <div className="col-span-2">
-              <p className="font-heading text-[10px] tracking-[0.2em] uppercase text-white/65">Customer ID</p>
-              <p className="text-white/65 text-sm">#{profile.iracingCustomerId}</p>
-            </div>
-            {profile.iracingStatsSyncedAt && (
-              <div className="col-span-2">
-                <p className="text-white/65 text-xs">
-                  Last updated {new Date(profile.iracingStatsSyncedAt).toLocaleDateString()} · auto-updates weekly
-                </p>
-              </div>
-            )}
           </div>
-        ) : (
-          <p className="mt-1 text-white/65 text-sm">Not linked yet</p>
-        )}
-      </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {(
@@ -155,25 +121,11 @@ export default function EditMyProfilePage() {
         ))}
 
         <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">Timezone</span>
-            {profile.timezone !== BROWSER_TIMEZONE && (
-              <button
-                type="button"
-                onClick={() => setProfile({ ...profile, timezone: BROWSER_TIMEZONE })}
-                className="text-xs text-w2w-red hover:text-w2w-red-bright"
-              >
-                Use {BROWSER_TIMEZONE}
-              </button>
-            )}
-          </div>
+          <span className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">Timezone</span>
           <TimezoneAutocomplete
             value={profile.timezone}
             onChange={(timezone) => setProfile({ ...profile, timezone })}
           />
-          <p className="text-white/70 text-xs">
-            Used to show your stints in your own local time on the race-planning page.
-          </p>
         </div>
 
         <label className="flex flex-col gap-2">
@@ -219,14 +171,12 @@ export default function EditMyProfilePage() {
           ))}
         </div>
 
-        {error && <p className="text-w2w-red text-sm">{error}</p>}
-
         <button
           type="submit"
           disabled={saving}
           className="px-6 py-3 bg-w2w-red hover:bg-w2w-red-bright disabled:opacity-50 text-on-accent font-heading font-bold tracking-wide uppercase text-sm transition-colors clip-corner"
         >
-          {saving ? 'Saving...' : 'Save Profile'}
+          {saving ? 'Saving...' : 'Save Settings'}
         </button>
       </form>
     </div>

@@ -39,7 +39,14 @@ export default function TrackDetailPage() {
       <div className="mt-4 flex items-start justify-between">
         <div className="flex items-center gap-4">
           {track.imageUrl && (
-            <img src={track.imageUrl} alt="" className="h-16 w-24 object-cover bg-black/30 shrink-0" />
+            <img
+              src={track.imageUrl}
+              alt=""
+              className="h-16 w-24 object-contain bg-black/30 shrink-0"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
           )}
           <div>
             <h1 className="font-display font-black text-3xl uppercase text-w2w-white">{track.name}</h1>

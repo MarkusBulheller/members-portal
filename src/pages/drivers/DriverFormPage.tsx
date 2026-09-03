@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import CountryFlag from '../../components/CountryFlag';
+import TimezoneAutocomplete from '../../components/TimezoneAutocomplete';
 import { ApiError } from '../../lib/api';
 import { driversApi } from '../../lib/api/drivers';
 import { licenseClassStyle } from '../../lib/iracingClass';
@@ -33,6 +34,7 @@ export default function DriverFormPage() {
         displayName: driver.displayName,
         country: driver.country ?? undefined,
         preferredClasses: driver.preferredClasses ?? undefined,
+        timezone: driver.timezone ?? undefined,
         bio: driver.bio ?? undefined,
         maxSuccessiveStints: driver.maxSuccessiveStints ?? undefined,
         startingDriver: driver.startingDriver,
@@ -102,6 +104,7 @@ export default function DriverFormPage() {
           displayName: form.displayName,
           country: form.country,
           preferredClasses: form.preferredClasses,
+          timezone: form.timezone ?? null,
           bio: form.bio,
           maxSuccessiveStints: form.maxSuccessiveStints ?? null,
           startingDriver: form.startingDriver,
@@ -173,6 +176,13 @@ export default function DriverFormPage() {
               className="input"
             />
           </label>
+          <div className="flex flex-col gap-2">
+            <span className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">Timezone</span>
+            <TimezoneAutocomplete
+              value={form.timezone ?? null}
+              onChange={(timezone) => setForm({ ...form, timezone: timezone ?? undefined })}
+            />
+          </div>
           <label className="flex flex-col gap-2">
             <span className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">Bio</span>
             <textarea

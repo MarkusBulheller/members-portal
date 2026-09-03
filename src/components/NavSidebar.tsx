@@ -68,7 +68,7 @@ export default function NavSidebar() {
     <aside className="fixed inset-y-0 left-0 w-60 bg-w2w-black-soft border-r border-white/10 flex flex-col">
       <div className="h-20 flex items-center px-6 border-b border-white/10">
         <span className="font-display font-black text-xl tracking-widest text-w2w-white">
-          W2<span className="text-w2w-red">W</span>
+          W<span className="text-w2w-red">2</span>W
         </span>
         <span className="ml-2 font-heading text-[10px] tracking-[0.3em] text-white/65 uppercase">
           Members

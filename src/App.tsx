@@ -14,6 +14,7 @@ import CarDetailPage from './pages/cars/CarDetailPage';
 import CarFormPage from './pages/cars/CarFormPage';
 import CarsListPage from './pages/cars/CarsListPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
+import AdminEditMemberSettingsPage from './pages/drivers/AdminEditMemberSettingsPage';
 import DriverDetailPage from './pages/drivers/DriverDetailPage';
 import DriverFormPage from './pages/drivers/DriverFormPage';
 import DriversListPage from './pages/drivers/DriversListPage';
@@ -84,6 +85,7 @@ function App() {
                 <Route path="/tracks/:id/edit" element={<TrackFormPage />} />
                 <Route path="/drivers/new" element={<DriverFormPage />} />
                 <Route path="/drivers/:id/edit" element={<DriverFormPage />} />
+                <Route path="/drivers/:id/edit-settings" element={<AdminEditMemberSettingsPage />} />
                 <Route path="/results/new" element={<RaceResultFormPage />} />
                 <Route path="/admin/members" element={<MembersQueuePage />} />
                 <Route path="/admin/contact-inquiries" element={<ContactInquiriesAdminPage />} />

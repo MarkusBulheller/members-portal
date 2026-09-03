@@ -57,7 +57,7 @@ export default function SharedRaceResultPage() {
     <div className="min-h-screen bg-w2w-black">
       <header className="border-b border-white/10 px-8 py-5 flex items-center justify-between">
         <span className="font-display font-black text-lg uppercase tracking-wide text-w2w-white">
-          W2<span className="text-w2w-red">W</span> Racing
+          W<span className="text-w2w-red">2</span>W Racing
         </span>
         <ThemeToggle />
       </header>

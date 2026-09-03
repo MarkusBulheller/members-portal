@@ -41,7 +41,16 @@ export default function TracksListPage() {
               to={`/tracks/${track.id}`}
               className="bg-w2w-charcoal border border-white/10 hover:border-w2w-red/50 overflow-hidden transition-colors"
             >
-              {track.imageUrl && <img src={track.imageUrl} alt="" className="w-full h-32 object-cover" />}
+              {track.imageUrl && (
+                <img
+                  src={track.imageUrl}
+                  alt=""
+                  className="w-full h-32 object-contain bg-black/30"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              )}
               <div className="p-4">
                 <p className="font-heading font-semibold text-white text-sm">{track.name}</p>
                 <p className="text-white/65 text-xs mt-0.5">{track.category}</p>

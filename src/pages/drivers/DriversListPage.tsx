@@ -4,6 +4,7 @@ import CountryFlag from '../../components/CountryFlag';
 import { useAuth } from '../../context/AuthContext';
 import { driversApi } from '../../lib/api/drivers';
 import { licenseClassStyle } from '../../lib/iracingClass';
+import { formatTimezoneLabel } from '../../lib/timezone';
 import type { DriverProfile } from '../../types/driver';
 
 export default function DriversListPage() {
@@ -60,7 +61,9 @@ export default function DriversListPage() {
                   </span>
                 </div>
                 <p className="text-white/65 text-xs truncate mt-1">
-                  {driver.iracingLocation ?? driver.preferredClasses ?? 'No classes set'}
+                  {[driver.iracingLocation ?? driver.preferredClasses ?? 'No classes set', formatTimezoneLabel(driver.timezone)]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </p>
               </div>
               <div className="mt-4 flex items-center justify-between">
