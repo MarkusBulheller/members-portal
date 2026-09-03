@@ -16,6 +16,18 @@ export const driversApi = {
   update: (id: string, input: UpdateManualDriverInput) => api.patch<DriverProfile>(`/drivers/${id}`, input),
   updateSettingsAsAdmin: (id: string, input: UpdateDriverProfileInput) =>
     api.patch<DriverProfile>(`/drivers/${id}/settings`, input),
+  uploadOwnAvatar: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.upload<DriverProfile>('/drivers/me/avatar', formData);
+  },
+  removeOwnAvatar: () => api.delete<DriverProfile>('/drivers/me/avatar'),
+  uploadAvatarAsAdmin: (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.upload<DriverProfile>(`/drivers/${id}/avatar`, formData);
+  },
+  removeAvatarAsAdmin: (id: string) => api.delete<DriverProfile>(`/drivers/${id}/avatar`),
   applyIracingSnapshot: (id: string, candidate: IracingDriverCandidate) =>
     api.post<DriverProfile>(`/drivers/${id}/iracing-link`, candidate),
   searchIracing: (query: string) =>

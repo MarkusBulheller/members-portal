@@ -6,6 +6,9 @@ export interface DriverProfile {
    * the "linked"/"manually added" indicator on the roster and detail pages. */
   userId: string | null;
   displayName: string;
+  /** Relative path under /uploads — pass through resolveAssetUrl() before rendering. Null shows
+   * the initials fallback used on the roster/detail pages. */
+  avatarUrl: string | null;
   iracingCustomerId: string | null;
   /** Verified snapshot from iRacing's OAuth flow, captured at link time — see EditMyProfilePage's
    * "Link iRacing Account" button. Null until linked. */

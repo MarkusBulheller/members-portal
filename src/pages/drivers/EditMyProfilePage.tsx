@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import AvatarUpload from '../../components/AvatarUpload';
 import CountryFlag from '../../components/CountryFlag';
 import TimezoneAutocomplete from '../../components/TimezoneAutocomplete';
 import { driversApi } from '../../lib/api/drivers';
@@ -72,6 +73,15 @@ export default function EditMyProfilePage() {
       {error && (
         <p className="mb-6 text-sm text-w2w-red bg-w2w-red/10 border border-w2w-red/30 px-4 py-3">{error}</p>
       )}
+
+      <div className="mb-8 bg-w2w-charcoal border border-white/10 p-5">
+        <AvatarUpload
+          avatarUrl={profile.avatarUrl}
+          displayName={profile.displayName}
+          onUpload={(file) => driversApi.uploadOwnAvatar(file).then(setProfile)}
+          onRemove={() => driversApi.removeOwnAvatar().then(setProfile)}
+        />
+      </div>
 
       <div className="mb-8 bg-w2w-charcoal border border-white/10 p-5">
         <div className="flex items-center justify-between mb-1">

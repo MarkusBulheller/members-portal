@@ -3,8 +3,10 @@ import { Link, NavLink, useLocation } from 'react-router-dom';
 import AccentPicker from './AccentPicker';
 import ThemeToggle from './ThemeToggle';
 import { useAuth } from '../context/AuthContext';
+import { resolveAssetUrl } from '../lib/api';
 import { adminApi } from '../lib/api/admin';
 import { contactInquiriesApi } from '../lib/api/contactInquiries';
+import { driversApi } from '../lib/api/drivers';
 
 const links = [
   { label: 'Dashboard', to: '/dashboard' },
@@ -39,6 +41,12 @@ export default function NavSidebar() {
     pendingMembers: 0,
     unreviewedInquiries: 0,
   });
+  const [ownAvatarUrl, setOwnAvatarUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    void driversApi.getOwn().then((profile) => setOwnAvatarUrl(profile.avatarUrl));
+  }, [user]);
 
   useEffect(() => {
     if (user?.role !== 'ADMIN') return;
@@ -121,8 +129,12 @@ export default function NavSidebar() {
           <AccentPicker />
         </div>
         <Link to="/drivers/me/edit" className="flex items-center gap-3 px-2 mb-3 group">
-          {user?.discordAvatarUrl ? (
-            <img src={user.discordAvatarUrl} alt="" className="h-8 w-8 rounded-full" />
+          {ownAvatarUrl || user?.discordAvatarUrl ? (
+            <img
+              src={ownAvatarUrl ? resolveAssetUrl(ownAvatarUrl) : user!.discordAvatarUrl!}
+              alt=""
+              className="h-8 w-8 rounded-full object-cover"
+            />
           ) : (
             <div className="h-8 w-8 rounded-full bg-w2w-charcoal-light flex items-center justify-center font-heading text-xs text-white/60">
               {user?.discordUsername.slice(0, 2).toUpperCase()}

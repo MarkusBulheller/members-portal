@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import AvatarUpload from '../../components/AvatarUpload';
 import CountryFlag from '../../components/CountryFlag';
 import TimezoneAutocomplete from '../../components/TimezoneAutocomplete';
 import { driversApi } from '../../lib/api/drivers';
@@ -62,6 +63,15 @@ export default function AdminEditMemberSettingsPage() {
           {error}
         </p>
       )}
+
+      <div className="mb-8 bg-w2w-charcoal border border-white/10 p-5">
+        <AvatarUpload
+          avatarUrl={profile.avatarUrl}
+          displayName={profile.displayName}
+          onUpload={(file) => driversApi.uploadAvatarAsAdmin(profile.id, file).then(setProfile)}
+          onRemove={() => driversApi.removeAvatarAsAdmin(profile.id).then(setProfile)}
+        />
+      </div>
 
       {profile.iracingCustomerId && (
         <div className="mb-8 bg-w2w-charcoal border border-white/10 p-5">

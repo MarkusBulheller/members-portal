@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import AvatarUpload from '../../components/AvatarUpload';
 import CountryFlag from '../../components/CountryFlag';
 import TimezoneAutocomplete from '../../components/TimezoneAutocomplete';
 import { ApiError } from '../../lib/api';
@@ -15,6 +16,7 @@ export default function DriverFormPage() {
   const navigate = useNavigate();
 
   const [form, setForm] = useState<CreateManualDriverInput>(EMPTY);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(!isEdit);
@@ -30,6 +32,7 @@ export default function DriverFormPage() {
     if (!id) return;
     void driversApi.getById(id).then((driver) => {
       setLinkedElsewhere(driver.userId !== null);
+      setAvatarUrl(driver.avatarUrl);
       setForm({
         displayName: driver.displayName,
         country: driver.country ?? undefined,
@@ -146,6 +149,17 @@ export default function DriverFormPage() {
       <h1 className="font-display font-black text-3xl uppercase text-w2w-white mb-8">
         {isEdit ? 'Edit Driver' : 'New Driver'}
       </h1>
+
+      {isEdit && id && (
+        <div className="mb-8 bg-w2w-charcoal border border-white/10 p-5 max-w-3xl">
+          <AvatarUpload
+            avatarUrl={avatarUrl}
+            displayName={form.displayName}
+            onUpload={(file) => driversApi.uploadAvatarAsAdmin(id, file).then((d) => setAvatarUrl(d.avatarUrl))}
+            onRemove={() => driversApi.removeAvatarAsAdmin(id).then((d) => setAvatarUrl(d.avatarUrl))}
+          />
+        </div>
+      )}
 
       <div className="grid md:grid-cols-[1fr_360px] gap-8">
         <form onSubmit={handleSubmit} className="space-y-5">

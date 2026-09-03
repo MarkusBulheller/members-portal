@@ -7,6 +7,7 @@ import Pagination from '../../components/Pagination';
 import RaceResultRow from '../../components/RaceResultRow';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { resolveAssetUrl } from '../../lib/api';
 import { achievementsApi } from '../../lib/api/achievements';
 import { driversApi } from '../../lib/api/drivers';
 import { raceResultsApi } from '../../lib/api/raceResults';
@@ -114,50 +115,63 @@ export default function DriverDetailPage() {
       </Link>
 
       <div className="mt-4 flex items-start justify-between">
-        <div>
-          <h1 className="font-display font-black text-2xl uppercase text-w2w-white flex items-center gap-2">
-            <CountryFlag countryCode={driver.iracingCountryCode} className="text-base rounded-sm" />
-            {driver.iracingName ?? driver.displayName}
-            <span
-              className={`text-[10px] font-heading uppercase tracking-wide px-1.5 py-0.5 ${
-                driver.userId ? 'bg-w2w-red/15 text-w2w-red' : 'bg-white/10 text-white/65'
-              }`}
-            >
-              {driver.userId ? 'Portal Member' : 'Manually Added'}
-            </span>
-          </h1>
-          {driver.iracingName && driver.iracingName !== driver.displayName && (
-            <p className="text-white/65 text-xs">"{driver.displayName}"</p>
-          )}
-          <p className="text-white/65 text-sm">
-            {[driver.iracingLocation ?? driver.country, driver.preferredClasses, formatTimezoneLabel(driver.timezone)]
-              .filter(Boolean)
-              .join(' · ') || 'No details set'}
-          </p>
-          {(driver.startingDriver || driver.wetDriver || driver.nightDriver || driver.maxSuccessiveStints !== null) && (
-            <div className="flex flex-wrap items-center gap-1.5 mt-2">
-              {driver.startingDriver && (
-                <span className="text-[10px] font-heading uppercase tracking-wide px-1.5 py-0.5 bg-white/10 text-white/65">
-                  Starting Driver
-                </span>
-              )}
-              {driver.wetDriver && (
-                <span className="text-[10px] font-heading uppercase tracking-wide px-1.5 py-0.5 bg-white/10 text-white/65">
-                  Wet Driver
-                </span>
-              )}
-              {driver.nightDriver && (
-                <span className="text-[10px] font-heading uppercase tracking-wide px-1.5 py-0.5 bg-white/10 text-white/65">
-                  Night Driver
-                </span>
-              )}
-              {driver.maxSuccessiveStints !== null && (
-                <span className="text-[10px] font-heading uppercase tracking-wide px-1.5 py-0.5 bg-white/10 text-white/65">
-                  Max {driver.maxSuccessiveStints} Successive Stint{driver.maxSuccessiveStints === 1 ? '' : 's'}
-                </span>
-              )}
+        <div className="flex items-start gap-4">
+          {driver.avatarUrl ? (
+            <img
+              src={resolveAssetUrl(driver.avatarUrl)}
+              alt=""
+              className="h-16 w-16 rounded-full object-cover bg-black/30 shrink-0"
+            />
+          ) : (
+            <div className="h-16 w-16 rounded-full bg-w2w-charcoal-light flex items-center justify-center font-heading text-lg text-white/60 shrink-0">
+              {driver.displayName.slice(0, 2).toUpperCase()}
             </div>
           )}
+          <div>
+            <h1 className="font-display font-black text-2xl uppercase text-w2w-white flex items-center gap-2">
+              <CountryFlag countryCode={driver.iracingCountryCode} className="text-base rounded-sm" />
+              {driver.iracingName ?? driver.displayName}
+              <span
+                className={`text-[10px] font-heading uppercase tracking-wide px-1.5 py-0.5 ${
+                  driver.userId ? 'bg-w2w-red/15 text-w2w-red' : 'bg-white/10 text-white/65'
+                }`}
+              >
+                {driver.userId ? 'Portal Member' : 'Manually Added'}
+              </span>
+            </h1>
+            {driver.iracingName && driver.iracingName !== driver.displayName && (
+              <p className="text-white/65 text-xs">"{driver.displayName}"</p>
+            )}
+            <p className="text-white/65 text-sm">
+              {[driver.iracingLocation ?? driver.country, driver.preferredClasses, formatTimezoneLabel(driver.timezone)]
+                .filter(Boolean)
+                .join(' · ') || 'No details set'}
+            </p>
+            {(driver.startingDriver || driver.wetDriver || driver.nightDriver || driver.maxSuccessiveStints !== null) && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {driver.startingDriver && (
+                  <span className="text-[10px] font-heading uppercase tracking-wide px-1.5 py-0.5 bg-white/10 text-white/65">
+                    Starting Driver
+                  </span>
+                )}
+                {driver.wetDriver && (
+                  <span className="text-[10px] font-heading uppercase tracking-wide px-1.5 py-0.5 bg-white/10 text-white/65">
+                    Wet Driver
+                  </span>
+                )}
+                {driver.nightDriver && (
+                  <span className="text-[10px] font-heading uppercase tracking-wide px-1.5 py-0.5 bg-white/10 text-white/65">
+                    Night Driver
+                  </span>
+                )}
+                {driver.maxSuccessiveStints !== null && (
+                  <span className="text-[10px] font-heading uppercase tracking-wide px-1.5 py-0.5 bg-white/10 text-white/65">
+                    Max {driver.maxSuccessiveStints} Successive Stint{driver.maxSuccessiveStints === 1 ? '' : 's'}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         {user?.role === 'ADMIN' && (
           <Link

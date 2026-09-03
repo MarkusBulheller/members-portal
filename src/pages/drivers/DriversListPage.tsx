@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import CountryFlag from '../../components/CountryFlag';
 import { useAuth } from '../../context/AuthContext';
+import { resolveAssetUrl } from '../../lib/api';
 import { driversApi } from '../../lib/api/drivers';
 import { licenseClassStyle } from '../../lib/iracingClass';
 import { formatTimezoneLabel } from '../../lib/timezone';
@@ -42,9 +43,20 @@ export default function DriversListPage() {
             <Link
               key={driver.id}
               to={`/drivers/${driver.id}`}
-              className="bg-w2w-charcoal border border-white/10 hover:border-w2w-red/50 p-5 transition-colors"
+              className="bg-w2w-charcoal border border-white/10 hover:border-w2w-red/50 p-5 transition-colors flex items-start gap-3"
             >
-              <div className="min-w-0">
+              {driver.avatarUrl ? (
+                <img
+                  src={resolveAssetUrl(driver.avatarUrl)}
+                  alt=""
+                  className="h-10 w-10 rounded-full object-cover bg-black/30 shrink-0"
+                />
+              ) : (
+                <div className="h-10 w-10 rounded-full bg-w2w-charcoal-light flex items-center justify-center font-heading text-xs text-white/60 shrink-0">
+                  {driver.displayName.slice(0, 2).toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-heading font-semibold text-white text-sm truncate flex items-center gap-1.5">
                     <CountryFlag countryCode={driver.iracingCountryCode} className="text-sm rounded-sm shrink-0" />
@@ -65,23 +77,23 @@ export default function DriversListPage() {
                     .filter(Boolean)
                     .join(' · ')}
                 </p>
-              </div>
-              <div className="mt-4 flex items-center justify-between">
-                <p className="text-white/65 text-xs">
-                  {driver.awards.length} achievement{driver.awards.length === 1 ? '' : 's'}
-                </p>
-                <div className="flex items-center gap-2">
-                  {driver.sportsCarSafetyRating && (
-                    <span
-                      className="px-1.5 py-0.5 text-[11px] font-heading font-semibold"
-                      style={licenseClassStyle(driver.sportsCarSafetyRating)}
-                    >
-                      {driver.sportsCarSafetyRating}
-                    </span>
-                  )}
-                  {driver.sportsCarIrating && (
-                    <span className="text-[11px] font-heading text-w2w-red">{driver.sportsCarIrating} iR</span>
-                  )}
+                <div className="mt-4 flex items-center justify-between">
+                  <p className="text-white/65 text-xs">
+                    {driver.awards.length} achievement{driver.awards.length === 1 ? '' : 's'}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {driver.sportsCarSafetyRating && (
+                      <span
+                        className="px-1.5 py-0.5 text-[11px] font-heading font-semibold"
+                        style={licenseClassStyle(driver.sportsCarSafetyRating)}
+                      >
+                        {driver.sportsCarSafetyRating}
+                      </span>
+                    )}
+                    {driver.sportsCarIrating && (
+                      <span className="text-[11px] font-heading text-w2w-red">{driver.sportsCarIrating} iR</span>
+                    )}
+                  </div>
                 </div>
               </div>
             </Link>
