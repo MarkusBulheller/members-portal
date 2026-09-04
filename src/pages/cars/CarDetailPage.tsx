@@ -130,7 +130,7 @@ export default function CarDetailPage() {
         ← Back to fleet
       </Link>
 
-      <div className="mt-4 flex items-start justify-between">
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-4">
           {car.imageUrl && (
             <img src={car.imageUrl} alt="" className="h-16 w-24 object-cover bg-black/30 shrink-0" />

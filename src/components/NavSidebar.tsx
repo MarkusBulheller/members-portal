@@ -37,11 +37,20 @@ function linkClasses(isActive: boolean): string {
 export default function NavSidebar() {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const [open, setOpen] = useState(false);
   const [badgeCounts, setBadgeCounts] = useState<{ pendingMembers: number; unreviewedInquiries: number }>({
     pendingMembers: 0,
     unreviewedInquiries: 0,
   });
   const [ownAvatarUrl, setOwnAvatarUrl] = useState<string | null>(null);
+
+  // Closing on every route change covers both an in-sidebar link click and any other in-app
+  // navigation (e.g. a "Back to results" link on a detail page) — simpler than wiring onClick
+  // onto every single nav link individually, and harmless on desktop where the drawer is always
+  // visible regardless of `open`.
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!user) return;
@@ -73,7 +82,40 @@ export default function NavSidebar() {
   }, [user?.role]);
 
   return (
-    <aside className="fixed inset-y-0 left-0 w-60 bg-w2w-black-soft border-r border-white/10 flex flex-col">
+    <>
+      {/* Mobile-only top bar — the sidebar itself becomes a slide-in drawer below md, so this is
+          the only persistently-visible chrome (logo + toggle) at that width. */}
+      <div className="md:hidden fixed top-0 inset-x-0 z-40 h-14 bg-w2w-black-soft border-b border-white/10 flex items-center justify-between px-4">
+        <span className="font-display font-black text-lg tracking-widest text-w2w-white">
+          W<span className="text-w2w-red">2</span>W
+        </span>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex flex-col gap-1.5 p-2"
+          aria-label="Toggle menu"
+          aria-expanded={open}
+          aria-controls="member-sidebar"
+        >
+          <span className={`h-[3px] w-6 rounded-full bg-white transition-transform ${open ? 'rotate-45 translate-y-[7px]' : ''}`} />
+          <span className={`h-[3px] w-6 rounded-full bg-white transition-opacity ${open ? 'opacity-0' : ''}`} />
+          <span className={`h-[3px] w-6 rounded-full bg-white transition-transform ${open ? '-rotate-45 -translate-y-[7px]' : ''}`} />
+        </button>
+      </div>
+
+      {open && (
+        <div
+          className="md:hidden fixed inset-0 z-40 bg-black/60"
+          onClick={() => setOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        id="member-sidebar"
+        className={`fixed inset-y-0 left-0 w-60 bg-w2w-black-soft border-r border-white/10 flex flex-col z-50 transition-transform duration-200 md:translate-x-0 ${
+          open ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
       <div className="h-20 flex items-center px-6 border-b border-white/10">
         <span className="font-display font-black text-xl tracking-widest text-w2w-white">
           W<span className="text-w2w-red">2</span>W
@@ -151,6 +193,7 @@ export default function NavSidebar() {
           Log out
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

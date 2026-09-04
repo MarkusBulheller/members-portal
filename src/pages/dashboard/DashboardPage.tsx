@@ -203,12 +203,12 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div className="flex items-center gap-2 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-6">
         <select
           aria-label="Filter by year"
           value={filters.year ?? ''}
           onChange={(e) => setFilters((prev) => ({ ...prev, year: e.target.value ? Number(e.target.value) : null }))}
-          className="flex-1 min-w-0 truncate bg-w2w-black border border-white/15 text-white text-sm px-3 py-2 focus:outline-none focus:border-w2w-red"
+          className="w-full min-w-0 truncate bg-w2w-black border border-white/15 text-white text-sm px-3 py-2 focus:outline-none focus:border-w2w-red"
         >
           <option value="">All years</option>
           {stats?.filterOptions.years.map((year) => (
@@ -221,7 +221,7 @@ export default function DashboardPage() {
           aria-label="Filter by track"
           value={filters.trackId ?? ''}
           onChange={(e) => setFilters((prev) => ({ ...prev, trackId: e.target.value || null }))}
-          className="flex-1 min-w-0 truncate bg-w2w-black border border-white/15 text-white text-sm px-3 py-2 focus:outline-none focus:border-w2w-red"
+          className="w-full min-w-0 truncate bg-w2w-black border border-white/15 text-white text-sm px-3 py-2 focus:outline-none focus:border-w2w-red"
         >
           <option value="">All tracks</option>
           {stats?.filterOptions.tracks
@@ -236,7 +236,7 @@ export default function DashboardPage() {
           aria-label="Filter by car"
           value={filters.carId ?? ''}
           onChange={(e) => setFilters((prev) => ({ ...prev, carId: e.target.value || null }))}
-          className="flex-1 min-w-0 truncate bg-w2w-black border border-white/15 text-white text-sm px-3 py-2 focus:outline-none focus:border-w2w-red"
+          className="w-full min-w-0 truncate bg-w2w-black border border-white/15 text-white text-sm px-3 py-2 focus:outline-none focus:border-w2w-red"
         >
           <option value="">All cars</option>
           {stats?.filterOptions.cars
@@ -251,7 +251,7 @@ export default function DashboardPage() {
           aria-label="Filter by series"
           value={filters.series ?? ''}
           onChange={(e) => setFilters((prev) => ({ ...prev, series: e.target.value || null }))}
-          className="flex-1 min-w-0 truncate bg-w2w-black border border-white/15 text-white text-sm px-3 py-2 focus:outline-none focus:border-w2w-red"
+          className="w-full min-w-0 truncate bg-w2w-black border border-white/15 text-white text-sm px-3 py-2 focus:outline-none focus:border-w2w-red"
         >
           <option value="">All series</option>
           {stats?.filterOptions.series.map((series) => (
@@ -264,7 +264,7 @@ export default function DashboardPage() {
           aria-label="Filter by race length"
           value={filters.raceLength ?? ''}
           onChange={(e) => setFilters((prev) => ({ ...prev, raceLength: e.target.value || null }))}
-          className="flex-1 min-w-0 truncate bg-w2w-black border border-white/15 text-white text-sm px-3 py-2 focus:outline-none focus:border-w2w-red"
+          className="w-full min-w-0 truncate bg-w2w-black border border-white/15 text-white text-sm px-3 py-2 focus:outline-none focus:border-w2w-red"
         >
           <option value="">All lengths</option>
           {stats?.filterOptions.raceLengths.map((length) => (

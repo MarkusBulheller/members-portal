@@ -36,7 +36,7 @@ export default function TrackDetailPage() {
         ← Back to tracks
       </Link>
 
-      <div className="mt-4 flex items-start justify-between">
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-4">
           {track.imageUrl && (
             <img

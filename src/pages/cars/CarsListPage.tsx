@@ -44,7 +44,7 @@ export default function CarsListPage() {
         <p className="text-white/65 text-sm">No cars in the fleet yet.</p>
       ) : (
         <>
-          <div className="flex items-center gap-3 mb-6">
+          <div className="flex flex-wrap items-center gap-3 mb-6">
             <input
               type="text"
               aria-label="Search cars"

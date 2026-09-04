@@ -83,7 +83,7 @@ export default function RaceResultDetailPage() {
         ← Back to results
       </Link>
 
-      <div className="mt-4 flex items-start justify-between">
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-display font-black text-2xl uppercase text-w2w-white">
             {result.trackName}
@@ -100,7 +100,7 @@ export default function RaceResultDetailPage() {
               .join(' · ')}
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => void handleExport()}
             disabled={exporting}

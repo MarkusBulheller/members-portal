@@ -91,7 +91,7 @@ export default function SeriesDetailPage() {
         ← Back to series
       </Link>
 
-      <div className="mt-4 flex items-start justify-between gap-4">
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-4">
           {season.logoUrl && (
             <img src={season.logoUrl} alt="" className="h-16 w-16 object-contain bg-black/30 shrink-0" />

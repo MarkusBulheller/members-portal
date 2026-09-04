@@ -58,7 +58,7 @@ export default function EventsListPage() {
       </div>
 
       {events !== null && events.length > 0 && (
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex flex-wrap items-center gap-3 mb-4">
           <input
             type="text"
             aria-label="Search events"

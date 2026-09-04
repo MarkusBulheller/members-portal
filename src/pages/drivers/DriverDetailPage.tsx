@@ -114,7 +114,7 @@ export default function DriverDetailPage() {
         ← Back to roster
       </Link>
 
-      <div className="mt-4 flex items-start justify-between">
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-4">
           {driver.avatarUrl ? (
             <img
@@ -128,7 +128,7 @@ export default function DriverDetailPage() {
             </div>
           )}
           <div>
-            <h1 className="font-display font-black text-2xl uppercase text-w2w-white flex items-center gap-2">
+            <h1 className="font-display font-black text-2xl uppercase text-w2w-white flex flex-wrap items-center gap-2">
               <CountryFlag countryCode={driver.iracingCountryCode} className="text-base rounded-sm" />
               {driver.iracingName ?? driver.displayName}
               <span
@@ -186,7 +186,7 @@ export default function DriverDetailPage() {
       {driver.bio && <p className="mt-6 text-white/60 text-sm leading-relaxed max-w-2xl">{driver.bio}</p>}
 
       {driver.iracingCustomerId && (
-        <div className="mt-6 grid grid-cols-3 gap-4 max-w-md">
+        <div className="mt-6 grid grid-cols-3 gap-2 sm:gap-4 max-w-md">
           <div className="bg-w2w-charcoal border border-white/10 p-4">
             <p className="font-heading text-[10px] tracking-[0.2em] text-white/65 uppercase">iRating</p>
             <p className="mt-1 font-display font-bold text-lg text-w2w-white whitespace-nowrap">

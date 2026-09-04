@@ -110,10 +110,12 @@
 
 html {
   color-scheme: dark;
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
+  overflow-x: hidden;
   background-color: var(--color-w2w-black);
   color: var(--color-w2w-white);
   font-family: var(--font-body);

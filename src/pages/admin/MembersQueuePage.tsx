@@ -79,9 +79,9 @@ export default function MembersQueuePage() {
           {members.map((member) => (
             <div
               key={member.id}
-              className="flex items-center justify-between bg-w2w-charcoal border border-white/10 px-5 py-4"
+              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-w2w-charcoal border border-white/10 px-5 py-4"
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 {member.discordAvatarUrl ? (
                   <img src={member.discordAvatarUrl} alt="" className="h-9 w-9 rounded-full" />
                 ) : (
@@ -103,7 +103,7 @@ export default function MembersQueuePage() {
                 </span>
               </div>
 
-              <div className="flex gap-2 shrink-0">
+              <div className="flex gap-2 flex-wrap sm:shrink-0">
                 {member.status === 'PENDING' && (
                   <>
                     <ActionButton

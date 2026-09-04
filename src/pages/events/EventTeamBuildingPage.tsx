@@ -134,7 +134,7 @@ export default function EventTeamBuildingPage() {
           {activeSignups.map((signup) => (
             <div
               key={signup.id}
-              className="flex items-center justify-between bg-w2w-charcoal border border-white/10 px-5 py-3"
+              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-w2w-charcoal border border-white/10 px-5 py-3"
             >
               <div>
                 <span className="text-white/70 text-sm">{driverNames[signup.userId] ?? 'Unknown driver'}</span>
@@ -151,7 +151,7 @@ export default function EventTeamBuildingPage() {
                     : signup.timeslots.map((t) => formatSlot(t.startsAt)).join(' · ')}
                 </p>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 flex-wrap sm:shrink-0">
                 <span
                   className={`px-2.5 py-1 text-[11px] font-heading uppercase tracking-wide ${SIGNUP_STATUS_STYLES[signup.status]}`}
                 >

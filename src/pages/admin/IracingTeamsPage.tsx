@@ -61,7 +61,7 @@ export default function IracingTeamsPage() {
         <div className="space-y-3">
           {teams.map((team) => (
             <div key={team.teamId} className="bg-w2w-charcoal border border-white/10 p-5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <p className="font-heading font-semibold text-white text-sm">{team.teamName}</p>
                 <span className="text-white/50 text-xs">
                   {team.rosterCount} on roster · synced {new Date(team.syncedAt).toLocaleDateString()}
