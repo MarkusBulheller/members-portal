@@ -6,6 +6,7 @@ import WeatherForecastChart from '../../components/WeatherForecastChart';
 import { useAuth } from '../../context/AuthContext';
 import { iracingSeriesApi } from '../../lib/api/iracingSeries';
 import { ApiError } from '../../lib/api';
+import { exportChartsAsPng } from '../../lib/exportChartPng';
 import { summarizeRaceWeek } from '../../lib/iracingWeather';
 import type { IracingCarUsageStat, IracingSeriesSeason } from '../../types/iracingSeries';
 import type { WeatherForecastPoint } from '../../types/iracingWeatherForecast';
@@ -34,6 +35,10 @@ export default function SeriesDetailPage() {
   const [justCreated, setJustCreated] = useState<number | null>(null);
   const [carUsage, setCarUsage] = useState<Record<number, IracingCarUsageStat[]>>({});
   const [trackingBusy, setTrackingBusy] = useState(false);
+  const [importSince, setImportSince] = useState('');
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importDone, setImportDone] = useState(false);
   // Which car-class tab is active per race week — only relevant (and only shown) for a week whose
   // tally actually spans more than one class; a single-class week just renders its flat list.
   const [carUsageClassTab, setCarUsageClassTab] = useState<Record<number, string>>({});
@@ -63,7 +68,10 @@ export default function SeriesDetailPage() {
         })
         .finally(() => setLoadingWeek(null));
     }
-    if (season.trackCarUsage && !carUsage[raceWeekNum]) {
+    // Fetched regardless of whether tracking is currently on — a season can have car-usage data
+    // from before it was toggled off, or from a manual "Import Car Usage Since" run, and that's
+    // worth showing either way.
+    if (!carUsage[raceWeekNum]) {
       void iracingSeriesApi
         .getCarUsage(season.seasonId, raceWeekNum)
         .then((stats) => setCarUsage((prev) => ({ ...prev, [raceWeekNum]: stats })));
@@ -78,6 +86,28 @@ export default function SeriesDetailPage() {
       setSeason(updated);
     } finally {
       setTrackingBusy(false);
+    }
+  }
+
+  async function handleImportCarUsage() {
+    if (!season || !importSince) return;
+    setImportBusy(true);
+    setImportError(null);
+    setImportDone(false);
+    try {
+      await iracingSeriesApi.syncCarUsageSince(season.seasonId, new Date(importSince).toISOString());
+      // Cached tallies for any already-expanded week are now stale — drop them all and, if a
+      // week is open right now, refetch just that one so the numbers on screen update.
+      setCarUsage({});
+      if (expandedWeek !== null) {
+        const stats = await iracingSeriesApi.getCarUsage(season.seasonId, expandedWeek);
+        setCarUsage({ [expandedWeek]: stats });
+      }
+      setImportDone(true);
+    } catch (err) {
+      setImportError(err instanceof ApiError ? err.message : 'Failed to import car usage');
+    } finally {
+      setImportBusy(false);
     }
   }
 
@@ -134,6 +164,29 @@ export default function SeriesDetailPage() {
               />
               Track most-used cars (hourly)
             </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                aria-label="Import car usage since"
+                value={importSince}
+                onChange={(e) => {
+                  setImportSince(e.target.value);
+                  setImportDone(false);
+                }}
+                max={new Date().toISOString().slice(0, 10)}
+                className="input w-auto text-xs py-1.5"
+              />
+              <button
+                type="button"
+                onClick={() => void handleImportCarUsage()}
+                disabled={importBusy || !importSince}
+                className="px-3 py-1.5 border border-white/20 text-white/70 hover:text-white hover:border-white/40 disabled:opacity-50 font-heading text-[11px] uppercase tracking-wide transition-colors"
+              >
+                {importBusy ? 'Importing...' : 'Import Car Usage Since'}
+              </button>
+            </div>
+            {importError && <p className="text-w2w-red text-[11px] max-w-xs text-right">{importError}</p>}
+            {importDone && !importError && <p className="text-white/65 text-[11px]">Imported.</p>}
           </div>
         )}
       </div>
@@ -231,7 +284,7 @@ export default function SeriesDetailPage() {
                                 <WeatherForecastChart points={forecasts[week.raceWeekNum]} />
                               ) : null}
                             </div>
-                            {season.trackCarUsage && (
+                            {(season.trackCarUsage || (carUsage[week.raceWeekNum]?.length ?? 0) > 0) && (
                               <div>
                                 <p className="font-heading text-[10px] tracking-[0.2em] text-white/65 uppercase mb-2">
                                   Most-Used Cars
@@ -251,28 +304,80 @@ export default function SeriesDetailPage() {
                                     const shownStats = activeClass ? weekStats.filter((s) => s.carClass === activeClass) : weekStats;
                                     const classColors = assignColors(classes);
                                     const carColors = assignColors(shownStats.map((s) => s.carName));
+                                    const carSplitTitle = activeClass ? `${activeClass} Car Split` : 'Car Split';
+                                    const seriesName = season.seriesName;
+                                    function handleExportPng() {
+                                      const formatValue = (v: number) => `${v} ${v === 1 ? 'entry' : 'entries'}`;
+                                      const sections = [];
+
+                                      if (classes.length > 1) {
+                                        sections.push({
+                                          title: 'Car Class Popularity',
+                                          data: classes.map((cls) => ({
+                                            name: cls,
+                                            value: weekStats.filter((s) => s.carClass === cls).reduce((sum, s) => sum + s.entryCount, 0),
+                                            color: classColors.get(cls)!,
+                                          })),
+                                          formatValue,
+                                        });
+                                      }
+
+                                      // One car-split section per class (not just the tab currently open on screen) so
+                                      // the export is a complete record of the week, not a snapshot of one tab.
+                                      const classesToExport = classes.length > 1 ? classes : [null];
+                                      for (const cls of classesToExport) {
+                                        const statsForClass = cls ? weekStats.filter((s) => s.carClass === cls) : weekStats;
+                                        const colorsForClass = assignColors(statsForClass.map((s) => s.carName));
+                                        sections.push({
+                                          title: cls ? `${cls} Car Split` : 'Car Split',
+                                          data: statsForClass.map((s) => ({
+                                            name: s.carName,
+                                            value: s.entryCount,
+                                            color: colorsForClass.get(s.carName)!,
+                                          })),
+                                          formatValue,
+                                        });
+                                      }
+
+                                      exportChartsAsPng(
+                                        `${seriesName} - week ${week.raceWeekNum} car usage.png`,
+                                        `${seriesName} · Race Week ${week.raceWeekNum}`,
+                                        sections,
+                                      );
+                                    }
                                     return (
                                       <>
-                                        {classes.length > 1 && (
-                                          <div className="flex gap-1 mb-2 flex-wrap">
-                                            {classes.map((cls) => (
-                                              <button
-                                                key={cls}
-                                                type="button"
-                                                onClick={() =>
-                                                  setCarUsageClassTab((prev) => ({ ...prev, [week.raceWeekNum!]: cls }))
-                                                }
-                                                className={`px-2 py-0.5 text-[10px] font-heading uppercase tracking-wide border transition-colors ${
-                                                  activeClass === cls
-                                                    ? 'border-w2w-red text-white bg-w2w-red/15'
-                                                    : 'border-white/15 text-white/50 hover:text-white hover:border-white/30'
-                                                }`}
-                                              >
-                                                {cls}
-                                              </button>
-                                            ))}
-                                          </div>
-                                        )}
+                                        <div className="flex items-center justify-between gap-2 mb-2">
+                                          {classes.length > 1 ? (
+                                            <div className="flex gap-1 flex-wrap">
+                                              {classes.map((cls) => (
+                                                <button
+                                                  key={cls}
+                                                  type="button"
+                                                  onClick={() =>
+                                                    setCarUsageClassTab((prev) => ({ ...prev, [week.raceWeekNum!]: cls }))
+                                                  }
+                                                  className={`px-2 py-0.5 text-[10px] font-heading uppercase tracking-wide border transition-colors ${
+                                                    activeClass === cls
+                                                      ? 'border-w2w-red text-white bg-w2w-red/15'
+                                                      : 'border-white/15 text-white/50 hover:text-white hover:border-white/30'
+                                                  }`}
+                                                >
+                                                  {cls}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          ) : (
+                                            <div />
+                                          )}
+                                          <button
+                                            type="button"
+                                            onClick={handleExportPng}
+                                            className="text-[10px] text-white/65 hover:text-white font-heading uppercase tracking-wide shrink-0"
+                                          >
+                                            Export PNG
+                                          </button>
+                                        </div>
                                         <div className="space-y-4">
                                           {classes.length > 1 && (
                                             <DriverShareChart
@@ -287,7 +392,7 @@ export default function SeriesDetailPage() {
                                             />
                                           )}
                                           <DriverShareChart
-                                            title={activeClass ? `${activeClass} Car Split` : 'Car Split'}
+                                            title={carSplitTitle}
                                             data={shownStats.map((s) => ({
                                               name: s.carName,
                                               value: s.entryCount,

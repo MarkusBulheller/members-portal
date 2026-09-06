@@ -32,6 +32,14 @@ export default function EventDetailPage() {
   const secondaryClassHeadingId = useId();
   const favouriteCarId = useId();
 
+  const [editing, setEditing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formTimeslotIds, setFormTimeslotIds] = useState<string[]>([]);
+  const [formCarClass, setFormCarClass] = useState('');
+  const [formSecondaryCarClass, setFormSecondaryCarClass] = useState('');
+  const [formCarId, setFormCarId] = useState('');
+  const [formAvailableHours, setFormAvailableHours] = useState<string[]>([]);
+
   const load = () => {
     if (id) void eventsApi.getById(id).then(setEvent);
   };
@@ -47,94 +55,64 @@ export default function EventDetailPage() {
 
   const mySignup = event?.signups.find((s) => s.userId === user?.id && s.status !== 'CANCELLED');
   const activeSignups = event?.signups.filter((s) => s.status !== 'CANCELLED') ?? [];
-  const mySlotIds = mySignup?.timeslots.map((t) => t.id) ?? [];
-  const carsInMyClass = cars.filter((c) => c.carClass === mySignup?.carClass);
   const carNames = Object.fromEntries(cars.map((c) => [c.id, c.name]));
+  const carsInFormClass = cars.filter((c) => c.carClass === formCarClass);
+  const showSignupForm = !mySignup || editing;
 
-  async function handleToggleSlot(slotId: string) {
-    if (!id) return;
-    const next = mySlotIds.includes(slotId) ? mySlotIds.filter((s) => s !== slotId) : [...mySlotIds, slotId];
-    setBusy(true);
-    setError(null);
-    try {
-      await eventsApi.signup(id, { timeslotIds: next });
-      load();
-      setLiveMessage(next.includes(slotId) ? 'Start time added to your availability.' : 'Start time removed from your availability.');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to update availability');
-    } finally {
-      setBusy(false);
+  function toggleFormSlot(slotId: string) {
+    if (!event) return;
+    if (formTimeslotIds.includes(slotId)) {
+      setFormTimeslotIds((prev) => prev.filter((s) => s !== slotId));
+      // Dropping a slot drops its hour picks too — an hour only means something relative to
+      // the timeslot it belongs to.
+      const slot = event.timeslots.find((s) => s.id === slotId);
+      if (slot) {
+        const droppedHours = new Set(hoursForSlot(slot.startsAt, event.raceLengthMinutes));
+        setFormAvailableHours((prev) => prev.filter((h) => !droppedHours.has(h)));
+      }
+    } else {
+      setFormTimeslotIds((prev) => [...prev, slotId]);
     }
   }
 
-  async function handleCarClassChange(carClass: string) {
+  function toggleFormHour(hourIso: string) {
+    setFormAvailableHours((prev) => (prev.includes(hourIso) ? prev.filter((h) => h !== hourIso) : [...prev, hourIso]));
+  }
+
+  function startEdit() {
+    setFormTimeslotIds(mySignup?.timeslots.map((t) => t.id) ?? []);
+    setFormCarClass(mySignup?.carClass ?? '');
+    setFormSecondaryCarClass(mySignup?.secondaryCarClass ?? '');
+    setFormCarId(mySignup?.carId ?? '');
+    setFormAvailableHours(mySignup?.availableHours ?? []);
+    setError(null);
+    setEditing(true);
+  }
+
+  function handleDiscardEdit() {
+    setEditing(false);
+    setError(null);
+  }
+
+  async function handleSubmitSignup() {
     if (!id) return;
-    setBusy(true);
+    setSubmitting(true);
     setError(null);
     try {
-      // Changing class invalidates a previously-picked car from the old class, and the
-      // secondary choice can't duplicate the new primary.
       await eventsApi.signup(id, {
-        carClass,
-        carId: null,
-        secondaryCarClass: mySignup?.secondaryCarClass === carClass ? null : undefined,
+        timeslotIds: formTimeslotIds,
+        carClass: formCarClass || null,
+        secondaryCarClass: formSecondaryCarClass || null,
+        carId: formCarId || null,
+        availableHours: formAvailableHours,
       });
       load();
-      setLiveMessage(`Primary car class set to ${carClass}.`);
+      setEditing(false);
+      setLiveMessage(mySignup ? 'Signup updated.' : "You're signed up.");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to update car class');
+      setError(err instanceof ApiError ? err.message : 'Failed to save signup');
     } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleSecondaryCarClassChange(carClass: string) {
-    if (!id) return;
-    const next = mySignup?.secondaryCarClass === carClass ? null : carClass;
-    setBusy(true);
-    setError(null);
-    try {
-      await eventsApi.signup(id, { secondaryCarClass: next });
-      load();
-      setLiveMessage(next ? `Secondary car class set to ${next}.` : 'Secondary car class cleared.');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to update secondary car class');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleToggleHour(hourIso: string) {
-    if (!id || !mySignup) return;
-    const current = mySignup.availableHours;
-    const next = current.includes(hourIso) ? current.filter((h) => h !== hourIso) : [...current, hourIso];
-    setBusy(true);
-    setError(null);
-    try {
-      await eventsApi.signup(id, { availableHours: next });
-      load();
-      setLiveMessage(
-        next.includes(hourIso) ? `${formatHour(hourIso)} marked available.` : `${formatHour(hourIso)} marked unavailable.`,
-      );
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to update hourly availability');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleCarChange(carId: string) {
-    if (!id) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await eventsApi.signup(id, { carId: carId || null });
-      load();
-      setLiveMessage(carId ? `Favourite car set to ${carNames[carId] ?? 'selected car'}.` : 'Favourite car cleared.');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to update car');
-    } finally {
-      setBusy(false);
+      setSubmitting(false);
     }
   }
 
@@ -278,47 +256,113 @@ export default function EventDetailPage() {
         </p>
       )}
 
-      <h2 id={availabilityHeadingId} className="mt-8 font-heading text-xs tracking-[0.25em] text-white/65 uppercase mb-3">
-        Your Availability
-      </h2>
-      <p className="text-white/65 text-xs mb-3">Flag every start time you could actually do.</p>
-      <div role="group" aria-labelledby={availabilityHeadingId} className="flex flex-wrap gap-2">
-        {event.timeslots.map((slot) => {
-          const selected = mySlotIds.includes(slot.id);
-          return (
-            <button
-              key={slot.id}
-              type="button"
-              aria-pressed={selected}
-              onClick={() => void handleToggleSlot(slot.id)}
-              disabled={busy || event.status !== 'PUBLISHED'}
-              className={`px-3 py-1.5 font-heading text-xs uppercase tracking-wide transition-colors disabled:opacity-40 ${
-                selected
-                  ? 'bg-w2w-red text-on-accent'
-                  : 'border border-white/20 text-white/60 hover:text-white hover:border-white/40'
-              }`}
-            >
-              {formatSlot(slot.startsAt)}
-            </button>
-          );
-        })}
-      </div>
+      {mySignup && !editing && (
+        <div className="mt-8">
+          <h2 className="font-heading text-xs tracking-[0.25em] text-white/65 uppercase mb-3">Your Signup</h2>
+          <div className="bg-w2w-charcoal border border-white/10 p-5">
+            <p className="font-heading text-[10px] tracking-[0.2em] text-white/65 uppercase mb-2">Start Time(s)</p>
+            {mySignup.timeslots.length === 0 ? (
+              <p className="text-white/65 text-sm">None picked yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {mySignup.timeslots.map((t) => (
+                  <span
+                    key={t.id}
+                    className="px-3 py-1.5 bg-w2w-red/15 text-w2w-red font-heading text-xs uppercase tracking-wide"
+                  >
+                    {formatSlot(t.startsAt)}
+                  </span>
+                ))}
+              </div>
+            )}
 
-      {mySignup && (
-        <>
-          <h2 id={carClassHeadingId} className="mt-8 font-heading text-xs tracking-[0.25em] text-white/65 uppercase mb-3">
-            Your Car Class
+            {(mySignup.carClass || mySignup.carId) && (
+              <div className="mt-4 pt-4 border-t border-white/10 flex flex-wrap gap-x-8 gap-y-3">
+                {mySignup.carClass && (
+                  <div>
+                    <p className="font-heading text-[10px] tracking-[0.2em] text-white/65 uppercase mb-1">Car Class</p>
+                    <p className="text-white text-sm">
+                      {mySignup.carClass}
+                      {mySignup.secondaryCarClass ? ` (or ${mySignup.secondaryCarClass})` : ''}
+                    </p>
+                  </div>
+                )}
+                {mySignup.carId && (
+                  <div>
+                    <p className="font-heading text-[10px] tracking-[0.2em] text-white/65 uppercase mb-1">Favourite Car</p>
+                    <p className="text-white text-sm">{carNames[mySignup.carId] ?? '—'}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="mt-5 flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={startEdit}
+                disabled={event.status !== 'PUBLISHED'}
+                className="px-4 py-2 bg-w2w-red hover:bg-w2w-red-bright disabled:opacity-40 text-on-accent font-heading font-bold text-xs uppercase tracking-wide transition-colors clip-corner"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => void handleCancel()}
+                disabled={busy || event.status !== 'PUBLISHED'}
+                className="px-4 py-2 border border-w2w-red/40 text-w2w-red hover:bg-w2w-red/10 disabled:opacity-50 font-heading text-xs uppercase tracking-wide transition-colors"
+              >
+                Cancel Signup Entirely
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSignupForm && event.status === 'PUBLISHED' && (
+        <div className="mt-8">
+          <h2 className="font-heading text-xs tracking-[0.25em] text-white/65 uppercase mb-3">
+            {mySignup ? 'Edit Your Signup' : 'Sign Up'}
           </h2>
+
+          <h3 id={availabilityHeadingId} className="font-heading text-xs tracking-[0.2em] uppercase text-white/65 mb-2">
+            1. Which start time(s) can you do?
+          </h3>
+          <div role="group" aria-labelledby={availabilityHeadingId} className="flex flex-wrap gap-2">
+            {event.timeslots.map((slot) => {
+              const selected = formTimeslotIds.includes(slot.id);
+              return (
+                <button
+                  key={slot.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => toggleFormSlot(slot.id)}
+                  className={`px-3 py-1.5 font-heading text-xs uppercase tracking-wide transition-colors ${
+                    selected
+                      ? 'bg-w2w-red text-on-accent'
+                      : 'border border-white/20 text-white/60 hover:text-white hover:border-white/40'
+                  }`}
+                >
+                  {formatSlot(slot.startsAt)}
+                </button>
+              );
+            })}
+          </div>
+
+          <h3 id={carClassHeadingId} className="mt-6 font-heading text-xs tracking-[0.2em] uppercase text-white/65 mb-2">
+            2. Car class
+          </h3>
           <div role="group" aria-labelledby={carClassHeadingId} className="flex flex-wrap gap-2">
             {event.carClasses.map((cls) => (
               <button
                 key={cls}
                 type="button"
-                aria-pressed={mySignup.carClass === cls}
-                onClick={() => void handleCarClassChange(cls)}
-                disabled={busy || event.status !== 'PUBLISHED'}
-                className={`px-3 py-1.5 font-heading text-xs uppercase tracking-wide transition-colors disabled:opacity-40 ${
-                  mySignup.carClass === cls
+                aria-pressed={formCarClass === cls}
+                onClick={() => {
+                  setFormCarClass(formCarClass === cls ? '' : cls);
+                  setFormCarId('');
+                  if (formSecondaryCarClass === cls) setFormSecondaryCarClass('');
+                }}
+                className={`px-3 py-1.5 font-heading text-xs uppercase tracking-wide transition-colors ${
+                  formCarClass === cls
                     ? 'bg-w2w-red text-on-accent'
                     : 'border border-white/20 text-white/60 hover:text-white hover:border-white/40'
                 }`}
@@ -328,23 +372,22 @@ export default function EventDetailPage() {
             ))}
           </div>
 
-          {event.carClasses.length > 1 && (
+          {event.carClasses.length > 1 && formCarClass && (
             <div className="mt-3">
               <p id={secondaryClassHeadingId} className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">
-                Secondary Class (optional)
+                Secondary class (optional)
               </p>
               <div role="group" aria-labelledby={secondaryClassHeadingId} className="flex flex-wrap gap-2 mt-2">
                 {event.carClasses
-                  .filter((cls) => cls !== mySignup.carClass)
+                  .filter((cls) => cls !== formCarClass)
                   .map((cls) => (
                     <button
                       key={cls}
                       type="button"
-                      aria-pressed={mySignup.secondaryCarClass === cls}
-                      onClick={() => void handleSecondaryCarClassChange(cls)}
-                      disabled={busy || event.status !== 'PUBLISHED'}
-                      className={`px-3 py-1.5 font-heading text-xs uppercase tracking-wide transition-colors disabled:opacity-40 ${
-                        mySignup.secondaryCarClass === cls
+                      aria-pressed={formSecondaryCarClass === cls}
+                      onClick={() => setFormSecondaryCarClass(formSecondaryCarClass === cls ? '' : cls)}
+                      className={`px-3 py-1.5 font-heading text-xs uppercase tracking-wide transition-colors ${
+                        formSecondaryCarClass === cls
                           ? 'bg-w2w-red text-on-accent'
                           : 'border border-white/20 text-white/60 hover:text-white hover:border-white/40'
                       }`}
@@ -356,20 +399,19 @@ export default function EventDetailPage() {
             </div>
           )}
 
-          {mySignup.carClass && (
-            <div className="mt-3 flex flex-col gap-2">
+          {formCarClass && (
+            <div className="mt-3 flex flex-col gap-2 max-w-xs">
               <label htmlFor={favouriteCarId} className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">
-                Favourite Car (optional)
+                Favourite car (optional)
               </label>
               <select
                 id={favouriteCarId}
-                value={mySignup.carId ?? ''}
-                onChange={(e) => void handleCarChange(e.target.value)}
-                disabled={busy || event.status !== 'PUBLISHED'}
-                className="input max-w-xs"
+                value={formCarId}
+                onChange={(e) => setFormCarId(e.target.value)}
+                className="input"
               >
                 <option value="">No preference</option>
-                {carsInMyClass.map((car) => (
+                {carsInFormClass.map((car) => (
                   <option key={car.id} value={car.id}>
                     {car.name}
                   </option>
@@ -378,14 +420,102 @@ export default function EventDetailPage() {
             </div>
           )}
 
-          <button
-            onClick={() => void handleCancel()}
-            disabled={busy}
-            className="mt-4 px-4 py-2 border border-w2w-red/40 text-w2w-red hover:bg-w2w-red/10 disabled:opacity-50 font-heading text-xs uppercase tracking-wide transition-colors"
-          >
-            Cancel Signup Entirely
-          </button>
-        </>
+          {formTimeslotIds.length > 0 && (
+            <>
+              <h3 className="mt-6 font-heading text-xs tracking-[0.2em] uppercase text-white/65 mb-2">
+                3. Which hours can you drive? (optional)
+              </h3>
+              <p className="text-white/65 text-xs mb-3">
+                For each start time you picked, flag the hours of the race you could take a stint.
+              </p>
+              {event.timeslots
+                .filter((slot) => formTimeslotIds.includes(slot.id))
+                .map((slot) => {
+                  const hours = hoursForSlot(slot.startsAt, event.raceLengthMinutes);
+                  return (
+                    <div key={slot.id} className="mb-6">
+                      <h4 className="text-white/65 text-xs font-heading uppercase tracking-wide mb-2">
+                        {formatSlot(slot.startsAt)}
+                      </h4>
+                      <div className="overflow-x-auto border border-white/10">
+                        <table className="border-collapse text-sm">
+                          <caption className="sr-only">
+                            Hourly stint availability for the {formatSlot(slot.startsAt)} start option
+                          </caption>
+                          <thead>
+                            <tr className="border-b border-white/10">
+                              <th
+                                scope="col"
+                                className="sticky left-0 bg-w2w-charcoal py-2 px-3 text-left font-heading text-[11px] tracking-[0.15em] text-white/65 uppercase"
+                              >
+                                Driver
+                              </th>
+                              {hours.map((hourIso) => (
+                                <th
+                                  key={hourIso}
+                                  scope="col"
+                                  className="py-2 px-1 text-center font-heading text-[10px] tracking-wide text-white/65 uppercase whitespace-nowrap"
+                                >
+                                  {formatHour(hourIso)}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <th
+                                scope="row"
+                                className="sticky left-0 bg-w2w-charcoal py-1.5 px-3 text-left font-normal text-white whitespace-nowrap"
+                              >
+                                You
+                              </th>
+                              {hours.map((hourIso) => {
+                                const selected = formAvailableHours.includes(hourIso);
+                                return (
+                                  <td key={hourIso} className="p-0.5">
+                                    <button
+                                      type="button"
+                                      aria-pressed={selected}
+                                      aria-label={formatHour(hourIso)}
+                                      onClick={() => toggleFormHour(hourIso)}
+                                      className={`w-7 h-7 transition-colors hover:bg-w2w-red/70 cursor-pointer ${
+                                        selected ? 'bg-w2w-red' : 'bg-white/5'
+                                      }`}
+                                    />
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
+            </>
+          )}
+
+          <div className="mt-5 flex gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => void handleSubmitSignup()}
+              disabled={submitting || formTimeslotIds.length === 0 || !formCarClass}
+              className="px-5 py-2.5 bg-w2w-red hover:bg-w2w-red-bright disabled:opacity-40 text-on-accent font-heading font-bold text-xs uppercase tracking-wide transition-colors clip-corner"
+            >
+              {submitting ? 'Saving...' : mySignup ? 'Save Changes' : 'Submit Signup'}
+            </button>
+            {mySignup && (
+              <button
+                type="button"
+                onClick={handleDiscardEdit}
+                disabled={submitting}
+                className="px-5 py-2.5 border border-white/20 text-white/60 hover:text-white disabled:opacity-50 font-heading text-xs uppercase tracking-wide transition-colors"
+              >
+                Discard Changes
+              </button>
+            )}
+          </div>
+        </div>
       )}
 
       {error && (
@@ -398,7 +528,7 @@ export default function EventDetailPage() {
         Hourly Driving Availability
       </h2>
       <p className="text-white/65 text-xs mb-3">
-        Mark which hours of the race you could take a stint, for each start time you flagged above.
+        Who can take a stint, hour by hour, for each start time. Edit your signup above to change your own hours.
       </p>
       {event.timeslots.map((slot) => {
         const rows = activeSignups.filter((s) => s.timeslots.some((t) => t.id === slot.id));
@@ -442,36 +572,23 @@ export default function EventDetailPage() {
                         <tr key={signup.id} className="border-b border-white/5">
                           <th
                             scope="row"
-                            className="sticky left-0 bg-w2w-charcoal py-1.5 px-3 text-left font-normal text-white/70 whitespace-nowrap"
+                            className={`sticky left-0 bg-w2w-charcoal py-1.5 px-3 text-left font-normal whitespace-nowrap ${
+                              isMine ? 'text-white' : 'text-white/70'
+                            }`}
                           >
                             {driverNames[signup.userId] ?? 'Unknown driver'}
+                            {isMine ? ' (you)' : ''}
                           </th>
                           {hours.map((hourIso) => {
                             const available = signup.availableHours.includes(hourIso);
-                            // Other drivers' cells are read-only — rendered as plain divs, not
-                            // disabled buttons, since a disabled control implies "could be
-                            // enabled" which is misleading for something that's just a display.
-                            if (!isMine) {
-                              return (
-                                <td key={hourIso} className="p-0.5">
-                                  <div className={`w-7 h-7 ${available ? 'bg-w2w-red' : 'bg-white/5'}`}>
-                                    <span className="sr-only">{available ? 'Available' : 'Unavailable'}</span>
-                                  </div>
-                                </td>
-                              );
-                            }
+                            // Every row here is a read-only display — rendered as plain divs, not
+                            // buttons, since editing your own hours now happens through the
+                            // signup form above, not this shared reference table.
                             return (
                               <td key={hourIso} className="p-0.5">
-                                <button
-                                  type="button"
-                                  disabled={busy || event.status !== 'PUBLISHED'}
-                                  onClick={() => void handleToggleHour(hourIso)}
-                                  aria-pressed={available}
-                                  aria-label={formatHour(hourIso)}
-                                  className={`w-7 h-7 transition-colors disabled:opacity-60 hover:bg-w2w-red/70 cursor-pointer ${
-                                    available ? 'bg-w2w-red' : 'bg-white/5'
-                                  }`}
-                                />
+                                <div className={`w-7 h-7 ${available ? 'bg-w2w-red' : 'bg-white/5'}`}>
+                                  <span className="sr-only">{available ? 'Available' : 'Unavailable'}</span>
+                                </div>
                               </td>
                             );
                           })}

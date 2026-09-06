@@ -10,4 +10,6 @@ export const iracingSeriesApi = {
     api.patch<IracingSeriesSeason>(`/iracing/series/${seasonId}/track-car-usage`, { tracked }),
   getCarUsage: (seasonId: number, raceWeekNum: number) =>
     api.get<IracingCarUsageStat[]>(`/iracing/series/${seasonId}/car-usage/${raceWeekNum}`),
+  syncCarUsageSince: (seasonId: number, since: string) =>
+    api.post<{ ok: true }>(`/iracing/series/${seasonId}/car-usage/sync-since`, { since }),
 };
