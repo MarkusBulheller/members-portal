@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import EventsCalendar from '../../components/EventsCalendar';
 import { useAuth } from '../../context/AuthContext';
 import { eventsApi } from '../../lib/api/events';
 import type { RaceEvent } from '../../types/event';
@@ -21,6 +22,7 @@ export default function EventsListPage() {
   const [events, setEvents] = useState<RaceEvent[] | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [view, setView] = useState<'list' | 'calendar'>('list');
 
   useEffect(() => {
     void eventsApi.list().then((list) =>
@@ -58,28 +60,45 @@ export default function EventsListPage() {
       </div>
 
       {events !== null && events.length > 0 && (
-        <div className="flex flex-wrap items-center gap-3 mb-4">
-          <input
-            type="text"
-            aria-label="Search events"
-            placeholder="Search events..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input max-w-sm"
-          />
-          <select
-            aria-label="Filter by status"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="input w-auto"
-          >
-            <option value="">All Statuses</option>
-            {statuses.map((status) => (
-              <option key={status} value={status}>
-                {STATUS_LABELS[status] ?? status}
-              </option>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="text"
+              aria-label="Search events"
+              placeholder="Search events..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="input max-w-sm"
+            />
+            <select
+              aria-label="Filter by status"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="input w-auto"
+            >
+              <option value="">All Statuses</option>
+              {statuses.map((status) => (
+                <option key={status} value={status}>
+                  {STATUS_LABELS[status] ?? status}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-1 shrink-0">
+            {(['list', 'calendar'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                aria-pressed={view === v}
+                className={`px-3 py-1.5 font-heading text-xs uppercase tracking-wide transition-colors ${
+                  view === v ? 'bg-w2w-red text-on-accent' : 'bg-w2w-charcoal text-white/65 hover:text-white'
+                }`}
+              >
+                {v}
+              </button>
             ))}
-          </select>
+          </div>
         </div>
       )}
 
@@ -87,6 +106,8 @@ export default function EventsListPage() {
         <p className="text-white/65 text-sm">Loading...</p>
       ) : events.length === 0 ? (
         <p className="text-white/65 text-sm">No events on the schedule yet.</p>
+      ) : view === 'calendar' ? (
+        <EventsCalendar events={filtered} />
       ) : filtered.length === 0 ? (
         <p className="text-white/65 text-sm">No events match that search/filter.</p>
       ) : (
