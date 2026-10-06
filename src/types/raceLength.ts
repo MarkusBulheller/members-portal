@@ -5,6 +5,7 @@
 export const RACE_LENGTH_PRESETS = [
   { minutes: 160, label: '2h 40m' },
   { minutes: 180, label: '3h' },
+  { minutes: 240, label: '4h' },
   { minutes: 360, label: '6h' },
   { minutes: 480, label: '8h' },
   { minutes: 600, label: '10h' },

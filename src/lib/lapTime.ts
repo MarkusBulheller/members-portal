@@ -23,7 +23,7 @@ export function formatDuration(ms: number | null): string {
  * so it never exactly matches the race's advertised length — this snaps the computed duration
  * to whichever standard endurance format it's closest to, for a clean label instead of an odd
  * number like "24h 56m". */
-const STANDARD_RACE_LENGTHS_MIN = [160, 180, 360, 480, 600, 720, 1440]; // 2h40m, 3h, 6h, 8h, 10h, 12h, 24h
+const STANDARD_RACE_LENGTHS_MIN = [160, 180, 240, 360, 480, 600, 720, 1440]; // 2h40m, 3h, 4h, 6h, 8h, 10h, 12h, 24h
 
 export function guessRaceLength(ms: number | null): string {
   if (ms === null || ms < 0) return '—';
