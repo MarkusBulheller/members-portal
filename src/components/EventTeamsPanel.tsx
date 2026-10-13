@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { eventTeamDummyDriversApi } from '../lib/api/eventTeamDummyDrivers';
 import { eventTeamsApi } from '../lib/api/eventTeams';
 import { eventsApi } from '../lib/api/events';
 import { ApiError } from '../lib/api';
@@ -24,6 +25,14 @@ interface Props {
    * for a driver with no linked iRacing account, which can't be roster-checked. */
   driverIracingCustIds: Record<string, string | null>;
   signups: EventSignup[];
+  /** False for a non-iRacing event, where the iRacing team link has no meaning. Defaults true. */
+  isIracing?: boolean;
+  /** Every portal member (with an account) an admin may add to a team. Those without an active
+   * signup are offered under "Not signed up" and get signed up as they're added. */
+  rosterMembers?: { userId: string; name: string }[];
+  /** Drivers-roster entries with no portal account. They can't sign up, so they're added to a
+   * team directly (as a guest on that team's plan) rather than through a signup. */
+  rosterGuests?: { profileId: string; name: string }[];
   onChange: () => void;
 }
 
@@ -41,6 +50,9 @@ export default function EventTeamsPanel({
   driverNames,
   driverIracingCustIds,
   signups,
+  isIracing = true,
+  rosterMembers = [],
+  rosterGuests = [],
   onChange,
 }: Props) {
   const [newName, setNewName] = useState('');
@@ -51,9 +63,18 @@ export default function EventTeamsPanel({
   const [error, setError] = useState<string | null>(null);
 
   const unassigned = signups.filter((s) => s.eventTeamId === null);
+  const signedUpUserIds = new Set(signups.map((s) => s.userId));
+  const notSignedUp = rosterMembers.filter((m) => !signedUpUserIds.has(m.userId));
+  const placedGuestProfileIds = new Set(
+    teams.flatMap((t) => t.dummyDrivers ?? []).flatMap((d) => (d.driverProfileId ? [d.driverProfileId] : [])),
+  );
+  const availableGuests = rosterGuests.filter((g) => !placedGuestProfileIds.has(g.profileId));
   // Shared across every team card so the same driver keeps the same color everywhere on this
   // page, same convention as the Strategy timeline (driverColors.ts).
-  const driverColorOrder = orderedDriverIds(signups.map((s) => ({ driverUserId: s.userId })));
+  const driverColorOrder = orderedDriverIds([
+    ...signups.map((s) => ({ driverUserId: s.userId })),
+    ...teams.flatMap((t) => t.dummyDrivers ?? []).map((d) => ({ driverUserId: d.id })),
+  ]);
 
   function initials(name: string): string {
     const parts = name.trim().split(/\s+/);
@@ -146,6 +167,45 @@ export default function EventTeamsPanel({
     }
   }
 
+  async function handleAddMember(userId: string, eventTeamId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await eventsApi.addSignup(eventId, { userId, eventTeamId });
+      onChange();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to add driver');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleAddGuest(profileId: string, teamId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await eventTeamDummyDriversApi.create(eventId, teamId, { driverProfileId: profileId });
+      onChange();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to add driver');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRemoveGuest(teamId: string, dummyId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await eventTeamDummyDriversApi.remove(eventId, teamId, dummyId);
+      onChange();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to remove driver');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function rosterStatus(userId: string, iracingTeamId: number): 'on' | 'off' | 'unknown' {
     const custId = driverIracingCustIds[userId];
     if (!custId) return 'unknown';
@@ -178,20 +238,22 @@ export default function EventTeamsPanel({
                 ))}
               </select>
             </FormField>
-            <FormField label="iRacing Team">
-              <select
-                value={newIracingTeamId}
-                onChange={(e) => setNewIracingTeamId(e.target.value)}
-                className="input"
-              >
-                <option value="">No link</option>
-                {iracingTeams.map((team) => (
-                  <option key={team.teamId} value={team.teamId}>
-                    {team.teamName}
-                  </option>
-                ))}
-              </select>
-            </FormField>
+            {isIracing && (
+              <FormField label="iRacing Team">
+                <select
+                  value={newIracingTeamId}
+                  onChange={(e) => setNewIracingTeamId(e.target.value)}
+                  className="input"
+                >
+                  <option value="">No link</option>
+                  {iracingTeams.map((team) => (
+                    <option key={team.teamId} value={team.teamId}>
+                      {team.teamName}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+            )}
             <FormField label="Timeslot">
               <select value={newTimeslotId} onChange={(e) => setNewTimeslotId(e.target.value)} className="input">
                 <option value="">Not chosen</option>
@@ -226,6 +288,7 @@ export default function EventTeamsPanel({
         <div className="space-y-4">
           {teams.map((team) => {
             const members = signups.filter((s) => s.eventTeamId === team.id);
+            const guests = team.dummyDrivers ?? [];
             const teamCarName = carName(cars, team.carId);
             const teamIracingTeamName = iracingTeams.find((t) => t.teamId === team.iracingTeamId)?.teamName ?? null;
             const teamTimeslot = timeslots.find((s) => s.id === team.timeslotId) ?? null;
@@ -287,20 +350,22 @@ export default function EventTeamsPanel({
                         ))}
                       </select>
                     </FormField>
-                    <FormField label="iRacing Team">
-                      <select
-                        value={team.iracingTeamId ?? ''}
-                        onChange={(e) => void handleTeamIracingLinkChange(team, e.target.value)}
-                        className="input py-1.5 text-xs"
-                      >
-                        <option value="">No link</option>
-                        {iracingTeams.map((t) => (
-                          <option key={t.teamId} value={t.teamId}>
-                            {t.teamName}
-                          </option>
-                        ))}
-                      </select>
-                    </FormField>
+                    {isIracing && (
+                      <FormField label="iRacing Team">
+                        <select
+                          value={team.iracingTeamId ?? ''}
+                          onChange={(e) => void handleTeamIracingLinkChange(team, e.target.value)}
+                          className="input py-1.5 text-xs"
+                        >
+                          <option value="">No link</option>
+                          {iracingTeams.map((t) => (
+                            <option key={t.teamId} value={t.teamId}>
+                              {t.teamName}
+                            </option>
+                          ))}
+                        </select>
+                      </FormField>
+                    )}
                     <FormField label="Timeslot">
                       <select
                         value={team.timeslotId ?? ''}
@@ -319,7 +384,7 @@ export default function EventTeamsPanel({
                 )}
 
                 <div className="px-5 py-4">
-                  {members.length === 0 ? (
+                  {members.length === 0 && guests.length === 0 ? (
                     <p className="text-white/50 text-xs">No drivers assigned yet.</p>
                   ) : (
                     <ul className="space-y-1.5">
@@ -377,22 +442,87 @@ export default function EventTeamsPanel({
                           </li>
                         );
                       })}
+                      {guests.map((guest) => {
+                        const name =
+                          rosterGuests.find((g) => g.profileId === guest.driverProfileId)?.name ?? guest.name;
+                        const color = getDriverColor(guest.id, driverColorOrder);
+                        return (
+                          <li
+                            key={guest.id}
+                            className="flex items-center justify-between gap-3 py-1.5 px-2 -mx-2 rounded-sm hover:bg-white/[0.03] transition-colors"
+                          >
+                            <span className="flex items-center gap-2.5 min-w-0">
+                              <span
+                                aria-hidden="true"
+                                className={`shrink-0 h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-heading font-bold text-w2w-black ${color.dot}`}
+                              >
+                                {initials(name)}
+                              </span>
+                              <span className="text-white/85 text-sm truncate">{name}</span>
+                              <span className="shrink-0 text-white/50 text-[10px] font-heading uppercase tracking-wide px-1.5 py-0.5 bg-white/5">
+                                {guest.driverProfileId ? 'Guest' : 'Dummy'}
+                              </span>
+                            </span>
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => void handleRemoveGuest(team.id, guest.id)}
+                                disabled={busy}
+                                aria-label={`Remove ${name} from ${team.name}`}
+                                className="shrink-0 text-white/40 hover:text-w2w-red disabled:opacity-40 transition-colors"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
 
-                  {isAdmin && unassigned.length > 0 && (
+                  {isAdmin && (unassigned.length > 0 || notSignedUp.length > 0 || availableGuests.length > 0) && (
                     <select
                       value=""
-                      onChange={(e) => e.target.value && void handleAssign(e.target.value, team.id)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (!value) return;
+                        // "new:<userId>" = a member who hasn't signed up; anything else is an
+                        // existing unassigned signup's id.
+                        if (value.startsWith('new:')) void handleAddMember(value.slice(4), team.id);
+                        else if (value.startsWith('guest:')) void handleAddGuest(value.slice(6), team.id);
+                        else void handleAssign(value, team.id);
+                      }}
                       disabled={busy}
                       className="input py-1.5 text-xs mt-3 w-full sm:w-64"
                     >
                       <option value="">+ Add driver...</option>
-                      {unassigned.map((signup) => (
-                        <option key={signup.id} value={signup.id}>
-                          {driverNames[signup.userId] ?? 'Unknown driver'}
-                        </option>
-                      ))}
+                      {unassigned.length > 0 && (
+                        <optgroup label="Signed up">
+                          {unassigned.map((signup) => (
+                            <option key={signup.id} value={signup.id}>
+                              {driverNames[signup.userId] ?? 'Unknown driver'}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {notSignedUp.length > 0 && (
+                        <optgroup label="Not signed up">
+                          {notSignedUp.map((m) => (
+                            <option key={m.userId} value={`new:${m.userId}`}>
+                              {m.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {availableGuests.length > 0 && (
+                        <optgroup label="Guest drivers (no account)">
+                          {availableGuests.map((g) => (
+                            <option key={g.profileId} value={`guest:${g.profileId}`}>
+                              {g.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
                   )}
                 </div>

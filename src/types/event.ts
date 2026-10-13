@@ -2,6 +2,9 @@ import type { RaceLengthMinutes } from './raceLength';
 import type { Track } from './track';
 
 export type EventStatus = 'DRAFT' | 'PUBLISHED' | 'SIGNUPS_CLOSED' | 'CANCELLED' | 'COMPLETED';
+export type Sim = 'IRACING' | 'LMU';
+
+export const SIM_LABELS: Record<Sim, string> = { IRACING: 'iRacing', LMU: 'Le Mans Ultimate' };
 export type SignupStatus = 'CONFIRMED' | 'WAITLISTED' | 'CANCELLED';
 
 export interface EventTimeslot {
@@ -41,6 +44,10 @@ export interface RaceEvent {
   raceLengthMinutes: number;
   timeslots: EventTimeslot[];
   status: EventStatus;
+  sim: Sim;
+  /** iRacing only: the session caps how full the tank can be filled, as a percent of the car's
+   * max (decimal column, so a string like "98.00"). Null = no limit. */
+  fuelLimitPercent: string | null;
   /** Links this event to a specific iRacing series-season week — see EventWeatherForecast, which
    * uses these to fetch and display that week's forecast on the event detail page. Both null
    * unless explicitly linked. */
@@ -84,6 +91,8 @@ export interface CreateEventInput {
    * right before the API call, same as startsAt/endsAt. */
   timeslots: string[];
   status?: EventStatus;
+  sim?: Sim;
+  fuelLimitPercent?: number | null;
   /** undefined = leave unchanged (update) / unset (create), null = clear, number = set. */
   iracingSeasonId?: number | null;
   iracingRaceWeekNum?: number | null;

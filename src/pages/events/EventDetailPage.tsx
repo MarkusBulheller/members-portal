@@ -1,6 +1,8 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import EventWeatherForecast from '../../components/EventWeatherForecast';
+import Modal from '../../components/Modal';
+import SignupForm from '../../components/SignupForm';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { ApiError } from '../../lib/api';
@@ -8,8 +10,14 @@ import { carsApi } from '../../lib/api/cars';
 import { driversApi } from '../../lib/api/drivers';
 import { eventsApi } from '../../lib/api/events';
 import { formatHour, formatSlot, hoursForSlot, SIGNUP_STATUS_STYLES } from '../../lib/eventFormatting';
+import {
+  EMPTY_SIGNUP_VALUES,
+  formValuesToSignupInput,
+  signupToFormValues,
+  type SignupFormValues,
+} from '../../lib/signupFormValues';
 import type { Car } from '../../types/car';
-import type { RaceEventDetail } from '../../types/event';
+import { SIM_LABELS, type EventSignup, type RaceEventDetail } from '../../types/event';
 import { formatRaceLength } from '../../types/raceLength';
 
 export default function EventDetailPage() {
@@ -27,18 +35,10 @@ export default function EventDetailPage() {
    * feedback that a click actually saved. */
   const [liveMessage, setLiveMessage] = useState('');
 
-  const availabilityHeadingId = useId();
-  const carClassHeadingId = useId();
-  const secondaryClassHeadingId = useId();
-  const favouriteCarId = useId();
-
   const [editing, setEditing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [formTimeslotIds, setFormTimeslotIds] = useState<string[]>([]);
-  const [formCarClass, setFormCarClass] = useState('');
-  const [formSecondaryCarClass, setFormSecondaryCarClass] = useState('');
-  const [formCarId, setFormCarId] = useState('');
-  const [formAvailableHours, setFormAvailableHours] = useState<string[]>([]);
+  /** The signup an admin is currently editing on someone else's behalf (modal open when set). */
+  const [adminEditing, setAdminEditing] = useState<EventSignup | null>(null);
 
   const load = () => {
     if (id) void eventsApi.getById(id).then(setEvent);
@@ -56,35 +56,14 @@ export default function EventDetailPage() {
   const mySignup = event?.signups.find((s) => s.userId === user?.id && s.status !== 'CANCELLED');
   const activeSignups = event?.signups.filter((s) => s.status !== 'CANCELLED') ?? [];
   const carNames = Object.fromEntries(cars.map((c) => [c.id, c.name]));
-  const carsInFormClass = cars.filter((c) => c.carClass === formCarClass);
-  const showSignupForm = !mySignup || editing;
-
-  function toggleFormSlot(slotId: string) {
-    if (!event) return;
-    if (formTimeslotIds.includes(slotId)) {
-      setFormTimeslotIds((prev) => prev.filter((s) => s !== slotId));
-      // Dropping a slot drops its hour picks too — an hour only means something relative to
-      // the timeslot it belongs to.
-      const slot = event.timeslots.find((s) => s.id === slotId);
-      if (slot) {
-        const droppedHours = new Set(hoursForSlot(slot.startsAt, event.raceLengthMinutes));
-        setFormAvailableHours((prev) => prev.filter((h) => !droppedHours.has(h)));
-      }
-    } else {
-      setFormTimeslotIds((prev) => [...prev, slotId]);
-    }
-  }
-
-  function toggleFormHour(hourIso: string) {
-    setFormAvailableHours((prev) => (prev.includes(hourIso) ? prev.filter((h) => h !== hourIso) : [...prev, hourIso]));
-  }
+  // While signups are open anyone can sign up or edit; once they close (team building), only a
+  // driver who's already in can keep adjusting their own availability — matches the backend rule
+  // in EventsService.signup().
+  const isOpenForSignups = event?.status === 'PUBLISHED';
+  const canEditOwnSignup = isOpenForSignups || (event?.status === 'SIGNUPS_CLOSED' && !!mySignup);
+  const showSignupForm = mySignup ? editing && canEditOwnSignup : isOpenForSignups;
 
   function startEdit() {
-    setFormTimeslotIds(mySignup?.timeslots.map((t) => t.id) ?? []);
-    setFormCarClass(mySignup?.carClass ?? '');
-    setFormSecondaryCarClass(mySignup?.secondaryCarClass ?? '');
-    setFormCarId(mySignup?.carId ?? '');
-    setFormAvailableHours(mySignup?.availableHours ?? []);
     setError(null);
     setEditing(true);
   }
@@ -94,21 +73,31 @@ export default function EventDetailPage() {
     setError(null);
   }
 
-  async function handleSubmitSignup() {
+  async function handleSubmitSignup(values: SignupFormValues) {
     if (!id) return;
     setSubmitting(true);
     setError(null);
     try {
-      await eventsApi.signup(id, {
-        timeslotIds: formTimeslotIds,
-        carClass: formCarClass || null,
-        secondaryCarClass: formSecondaryCarClass || null,
-        carId: formCarId || null,
-        availableHours: formAvailableHours,
-      });
+      await eventsApi.signup(id, formValuesToSignupInput(values));
       load();
       setEditing(false);
       setLiveMessage(mySignup ? 'Signup updated.' : "You're signed up.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to save signup');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleAdminSubmit(signup: EventSignup, values: SignupFormValues) {
+    if (!id) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await eventsApi.updateSignupDetails(id, signup.id, formValuesToSignupInput(values));
+      load();
+      setAdminEditing(null);
+      setLiveMessage(`${driverNames[signup.userId] ?? 'Driver'}'s signup updated.`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to save signup');
     } finally {
@@ -190,7 +179,8 @@ export default function EventDetailPage() {
         <div>
           <h1 className="font-display font-black text-3xl uppercase text-w2w-white">{event.title}</h1>
           <p className="text-white/65 text-sm mt-1">
-            {event.track.name} · {event.carClasses.join(' / ')} · {formatRaceLength(event.raceLengthMinutes)}
+            {SIM_LABELS[event.sim]} · {event.track.name} · {event.carClasses.join(' / ')} ·{' '}
+            {formatRaceLength(event.raceLengthMinutes)}
           </p>
           <p className="text-white/65 text-sm">
             {new Date(event.startsAt).toLocaleString(undefined, {
@@ -250,10 +240,19 @@ export default function EventDetailPage() {
         {liveMessage}
       </div>
 
-      {event.status !== 'PUBLISHED' && (
+      {event.status === 'SIGNUPS_CLOSED' ? (
         <p className="mt-4 text-white/65 text-xs bg-white/5 px-3 py-2 border border-white/10">
-          Signups aren't open — this event is {event.status.toLowerCase().replace('_', ' ')}.
+          Signups are closed.{' '}
+          {mySignup
+            ? 'You can still edit your signup to update your availability.'
+            : 'Only drivers who were already signed up can still change their availability.'}
         </p>
+      ) : (
+        event.status !== 'PUBLISHED' && (
+          <p className="mt-4 text-white/65 text-xs bg-white/5 px-3 py-2 border border-white/10">
+            Signups aren't open — this event is {event.status.toLowerCase().replace('_', ' ')}.
+          </p>
+        )
       )}
 
       {mySignup && !editing && (
@@ -300,7 +299,7 @@ export default function EventDetailPage() {
               <button
                 type="button"
                 onClick={startEdit}
-                disabled={event.status !== 'PUBLISHED'}
+                disabled={!canEditOwnSignup}
                 className="px-4 py-2 bg-w2w-red hover:bg-w2w-red-bright disabled:opacity-40 text-on-accent font-heading font-bold text-xs uppercase tracking-wide transition-colors clip-corner"
               >
                 Edit
@@ -317,204 +316,20 @@ export default function EventDetailPage() {
         </div>
       )}
 
-      {showSignupForm && event.status === 'PUBLISHED' && (
+      {showSignupForm && (
         <div className="mt-8">
           <h2 className="font-heading text-xs tracking-[0.25em] text-white/65 uppercase mb-3">
             {mySignup ? 'Edit Your Signup' : 'Sign Up'}
           </h2>
-
-          <h3 id={availabilityHeadingId} className="font-heading text-xs tracking-[0.2em] uppercase text-white/65 mb-2">
-            1. Which start time(s) can you do?
-          </h3>
-          <div role="group" aria-labelledby={availabilityHeadingId} className="flex flex-wrap gap-2">
-            {event.timeslots.map((slot) => {
-              const selected = formTimeslotIds.includes(slot.id);
-              return (
-                <button
-                  key={slot.id}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => toggleFormSlot(slot.id)}
-                  className={`px-3 py-1.5 font-heading text-xs uppercase tracking-wide transition-colors ${
-                    selected
-                      ? 'bg-w2w-red text-on-accent'
-                      : 'border border-white/20 text-white/60 hover:text-white hover:border-white/40'
-                  }`}
-                >
-                  {formatSlot(slot.startsAt)}
-                </button>
-              );
-            })}
-          </div>
-
-          <h3 id={carClassHeadingId} className="mt-6 font-heading text-xs tracking-[0.2em] uppercase text-white/65 mb-2">
-            2. Car class
-          </h3>
-          <div role="group" aria-labelledby={carClassHeadingId} className="flex flex-wrap gap-2">
-            {event.carClasses.map((cls) => (
-              <button
-                key={cls}
-                type="button"
-                aria-pressed={formCarClass === cls}
-                onClick={() => {
-                  setFormCarClass(formCarClass === cls ? '' : cls);
-                  setFormCarId('');
-                  if (formSecondaryCarClass === cls) setFormSecondaryCarClass('');
-                }}
-                className={`px-3 py-1.5 font-heading text-xs uppercase tracking-wide transition-colors ${
-                  formCarClass === cls
-                    ? 'bg-w2w-red text-on-accent'
-                    : 'border border-white/20 text-white/60 hover:text-white hover:border-white/40'
-                }`}
-              >
-                {cls}
-              </button>
-            ))}
-          </div>
-
-          {event.carClasses.length > 1 && formCarClass && (
-            <div className="mt-3">
-              <p id={secondaryClassHeadingId} className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">
-                Secondary class (optional)
-              </p>
-              <div role="group" aria-labelledby={secondaryClassHeadingId} className="flex flex-wrap gap-2 mt-2">
-                {event.carClasses
-                  .filter((cls) => cls !== formCarClass)
-                  .map((cls) => (
-                    <button
-                      key={cls}
-                      type="button"
-                      aria-pressed={formSecondaryCarClass === cls}
-                      onClick={() => setFormSecondaryCarClass(formSecondaryCarClass === cls ? '' : cls)}
-                      className={`px-3 py-1.5 font-heading text-xs uppercase tracking-wide transition-colors ${
-                        formSecondaryCarClass === cls
-                          ? 'bg-w2w-red text-on-accent'
-                          : 'border border-white/20 text-white/60 hover:text-white hover:border-white/40'
-                      }`}
-                    >
-                      {cls}
-                    </button>
-                  ))}
-              </div>
-            </div>
-          )}
-
-          {formCarClass && (
-            <div className="mt-3 flex flex-col gap-2 max-w-xs">
-              <label htmlFor={favouriteCarId} className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">
-                Favourite car (optional)
-              </label>
-              <select
-                id={favouriteCarId}
-                value={formCarId}
-                onChange={(e) => setFormCarId(e.target.value)}
-                className="input"
-              >
-                <option value="">No preference</option>
-                {carsInFormClass.map((car) => (
-                  <option key={car.id} value={car.id}>
-                    {car.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {formTimeslotIds.length > 0 && (
-            <>
-              <h3 className="mt-6 font-heading text-xs tracking-[0.2em] uppercase text-white/65 mb-2">
-                3. Which hours can you drive? (optional)
-              </h3>
-              <p className="text-white/65 text-xs mb-3">
-                For each start time you picked, flag the hours of the race you could take a stint.
-              </p>
-              {event.timeslots
-                .filter((slot) => formTimeslotIds.includes(slot.id))
-                .map((slot) => {
-                  const hours = hoursForSlot(slot.startsAt, event.raceLengthMinutes);
-                  return (
-                    <div key={slot.id} className="mb-6">
-                      <h4 className="text-white/65 text-xs font-heading uppercase tracking-wide mb-2">
-                        {formatSlot(slot.startsAt)}
-                      </h4>
-                      <div className="overflow-x-auto border border-white/10">
-                        <table className="border-collapse text-sm">
-                          <caption className="sr-only">
-                            Hourly stint availability for the {formatSlot(slot.startsAt)} start option
-                          </caption>
-                          <thead>
-                            <tr className="border-b border-white/10">
-                              <th
-                                scope="col"
-                                className="sticky left-0 bg-w2w-charcoal py-2 px-3 text-left font-heading text-[11px] tracking-[0.15em] text-white/65 uppercase"
-                              >
-                                Driver
-                              </th>
-                              {hours.map((hourIso) => (
-                                <th
-                                  key={hourIso}
-                                  scope="col"
-                                  className="py-2 px-1 text-center font-heading text-[10px] tracking-wide text-white/65 uppercase whitespace-nowrap"
-                                >
-                                  {formatHour(hourIso)}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr>
-                              <th
-                                scope="row"
-                                className="sticky left-0 bg-w2w-charcoal py-1.5 px-3 text-left font-normal text-white whitespace-nowrap"
-                              >
-                                You
-                              </th>
-                              {hours.map((hourIso) => {
-                                const selected = formAvailableHours.includes(hourIso);
-                                return (
-                                  <td key={hourIso} className="p-0.5">
-                                    <button
-                                      type="button"
-                                      aria-pressed={selected}
-                                      aria-label={formatHour(hourIso)}
-                                      onClick={() => toggleFormHour(hourIso)}
-                                      className={`w-7 h-7 transition-colors hover:bg-w2w-red/70 cursor-pointer ${
-                                        selected ? 'bg-w2w-red' : 'bg-white/5'
-                                      }`}
-                                    />
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  );
-                })}
-            </>
-          )}
-
-          <div className="mt-5 flex gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={() => void handleSubmitSignup()}
-              disabled={submitting || formTimeslotIds.length === 0 || !formCarClass}
-              className="px-5 py-2.5 bg-w2w-red hover:bg-w2w-red-bright disabled:opacity-40 text-on-accent font-heading font-bold text-xs uppercase tracking-wide transition-colors clip-corner"
-            >
-              {submitting ? 'Saving...' : mySignup ? 'Save Changes' : 'Submit Signup'}
-            </button>
-            {mySignup && (
-              <button
-                type="button"
-                onClick={handleDiscardEdit}
-                disabled={submitting}
-                className="px-5 py-2.5 border border-white/20 text-white/60 hover:text-white disabled:opacity-50 font-heading text-xs uppercase tracking-wide transition-colors"
-              >
-                Discard Changes
-              </button>
-            )}
-          </div>
+          <SignupForm
+            event={event}
+            cars={cars}
+            initial={mySignup ? signupToFormValues(mySignup) : EMPTY_SIGNUP_VALUES}
+            submitLabel={mySignup ? 'Save Changes' : 'Submit Signup'}
+            submitting={submitting}
+            onSubmit={(values) => void handleSubmitSignup(values)}
+            onDiscard={mySignup ? handleDiscardEdit : undefined}
+          />
         </div>
       )}
 
@@ -635,18 +450,52 @@ export default function EventDetailPage() {
                   {signup.status}
                 </span>
                 {user?.role === 'ADMIN' && (
-                  <button
-                    onClick={() => void handleDeleteSignup(signup.id)}
-                    disabled={busy}
-                    className="text-white/65 hover:text-w2w-red text-[11px] font-heading uppercase tracking-wide transition-colors disabled:opacity-40"
-                  >
-                    Delete
-                  </button>
+                  <>
+                    <button
+                      onClick={() => {
+                        setError(null);
+                        setAdminEditing(signup);
+                      }}
+                      className="text-white/65 hover:text-white text-[11px] font-heading uppercase tracking-wide transition-colors"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => void handleDeleteSignup(signup.id)}
+                      disabled={busy}
+                      className="text-white/65 hover:text-w2w-red text-[11px] font-heading uppercase tracking-wide transition-colors disabled:opacity-40"
+                    >
+                      Delete
+                    </button>
+                  </>
                 )}
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {adminEditing && (
+        <Modal
+          title={`Edit ${driverNames[adminEditing.userId] ?? 'driver'}'s signup`}
+          onClose={() => setAdminEditing(null)}
+        >
+          {error && (
+            <p role="alert" className="mb-3 text-w2w-red text-sm">
+              {error}
+            </p>
+          )}
+          <SignupForm
+            event={event}
+            cars={cars}
+            initial={signupToFormValues(adminEditing)}
+            submitLabel="Save Changes"
+            submitting={submitting}
+            driverLabel={driverNames[adminEditing.userId] ?? 'Driver'}
+            onSubmit={(values) => void handleAdminSubmit(adminEditing, values)}
+            onDiscard={() => setAdminEditing(null)}
+          />
+        </Modal>
       )}
     </div>
   );

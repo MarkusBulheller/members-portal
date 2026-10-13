@@ -6,8 +6,8 @@ import { eventsApi } from '../../lib/api/events';
 import { iracingSeriesApi } from '../../lib/api/iracingSeries';
 import { tracksApi } from '../../lib/api/tracks';
 import { parseSeriesWeeks, composedTrackName } from '../../lib/iracingSeriesWeeks';
-import { CAR_CLASSES } from '../../types/carClass';
-import type { CreateEventInput, EventStatus } from '../../types/event';
+import { CAR_CLASSES_BY_SIM } from '../../types/carClass';
+import { SIM_LABELS, type CreateEventInput, type EventStatus, type Sim } from '../../types/event';
 import type { IracingSeriesSeason } from '../../types/iracingSeries';
 import { RACE_LENGTH_PRESETS, type RaceLengthMinutes } from '../../types/raceLength';
 import type { Track } from '../../types/track';
@@ -20,6 +20,8 @@ const EMPTY: CreateEventInput = {
   raceLengthMinutes: 1440,
   timeslots: [''],
   status: 'DRAFT',
+  sim: 'IRACING',
+  fuelLimitPercent: null,
   iracingSeasonId: null,
   iracingRaceWeekNum: null,
 };
@@ -67,6 +69,8 @@ export default function EventFormPage() {
         raceLengthMinutes: event.raceLengthMinutes as RaceLengthMinutes,
         timeslots: event.timeslots.length > 0 ? event.timeslots.map((t) => toLocalInputValue(t.startsAt)) : [''],
         status: event.status,
+        sim: event.sim,
+        fuelLimitPercent: event.fuelLimitPercent !== null ? Number(event.fuelLimitPercent) : null,
         iracingSeasonId: event.iracingSeasonId,
         iracingRaceWeekNum: event.iracingRaceWeekNum,
       });
@@ -91,6 +95,9 @@ export default function EventFormPage() {
     try {
       const payload = {
         ...form,
+        // An LMU event has no iRacing series/week to link — make sure an earlier iRacing
+        // selection doesn't ride along if the sim was switched.
+        ...(form.sim === 'LMU' ? { iracingSeasonId: null, iracingRaceWeekNum: null, fuelLimitPercent: null } : {}),
         startsAt: new Date(form.startsAt).toISOString(),
         endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : undefined,
         signupDeadline: form.signupDeadline ? new Date(form.signupDeadline).toISOString() : undefined,
@@ -112,6 +119,32 @@ export default function EventFormPage() {
       </h1>
 
       <form onSubmit={handleSubmit} className="space-y-5">
+        <Field label="Sim">
+          <div className="flex flex-wrap gap-2">
+            {(Object.keys(SIM_LABELS) as Sim[]).map((sim) => (
+              <button
+                key={sim}
+                type="button"
+                aria-pressed={form.sim === sim}
+                onClick={() =>
+                  setForm({
+                    ...form,
+                    sim,
+                    // Drop any selected class the other sim doesn't offer.
+                    carClasses: form.carClasses.filter((c) => (CAR_CLASSES_BY_SIM[sim] as readonly string[]).includes(c)),
+                  })
+                }
+                className={`px-4 py-2 font-heading text-xs uppercase tracking-wide transition-colors ${
+                  form.sim === sim
+                    ? 'bg-w2w-red text-on-accent'
+                    : 'border border-white/20 text-white/60 hover:text-white hover:border-white/40'
+                }`}
+              >
+                {SIM_LABELS[sim]}
+              </button>
+            ))}
+          </div>
+        </Field>
         <Field label="Title">
           <input
             required
@@ -129,7 +162,7 @@ export default function EventFormPage() {
         </Field>
         <Field label="Car Classes">
           <div className="flex flex-wrap gap-2">
-            {CAR_CLASSES.map((cls) => {
+            {CAR_CLASSES_BY_SIM[form.sim ?? 'IRACING'].map((cls) => {
               const selected = form.carClasses.includes(cls);
               return (
                 <button
@@ -175,6 +208,26 @@ export default function EventFormPage() {
             ))}
           </div>
         </Field>
+        {form.sim !== 'LMU' && (
+          <Field label="Fuel Limit (%) (optional)">
+            <p className="text-white/65 text-xs -mt-1 mb-1">
+              If the session caps how full the tank can be filled, e.g. 98. Applied to each team's tank size on the
+              plan page. Leave blank for no limit.
+            </p>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              step="0.1"
+              placeholder="No limit"
+              value={form.fuelLimitPercent ?? ''}
+              onChange={(e) =>
+                setForm({ ...form, fuelLimitPercent: e.target.value === '' ? null : Number(e.target.value) })
+              }
+              className="input max-w-[200px]"
+            />
+          </Field>
+        )}
         <Field label="Starts At">
           <input
             required
@@ -241,6 +294,7 @@ export default function EventFormPage() {
             className="input resize-none"
           />
         </Field>
+        {form.sim !== 'LMU' && (
         <Field label="Linked iRacing Week (optional)">
           <p className="text-white/65 text-xs -mt-1 mb-1">
             Shows that week's weather forecast on the event page.
@@ -272,6 +326,7 @@ export default function EventFormPage() {
             )}
           </div>
         </Field>
+        )}
 
         {error && <p className="text-w2w-red text-sm">{error}</p>}
 

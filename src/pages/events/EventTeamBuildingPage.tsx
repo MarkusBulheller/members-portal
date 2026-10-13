@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import EventTeamsPanel from '../../components/EventTeamsPanel';
-import HourlyAvailabilityGrid from '../../components/HourlyAvailabilityGrid';
+import HourlyAvailabilityGrid, { type AvailabilityGridRow } from '../../components/HourlyAvailabilityGrid';
+import Modal from '../../components/Modal';
+import SignupForm from '../../components/SignupForm';
 import { useConfirm } from '../../context/ConfirmContext';
 import { ApiError } from '../../lib/api';
 import { carsApi } from '../../lib/api/cars';
@@ -10,8 +12,9 @@ import { eventsApi } from '../../lib/api/events';
 import { eventTeamsApi } from '../../lib/api/eventTeams';
 import { iracingTeamsApi } from '../../lib/api/iracingTeams';
 import { formatSlot, SIGNUP_STATUS_STYLES } from '../../lib/eventFormatting';
+import { formValuesToSignupInput, signupToFormValues, type SignupFormValues } from '../../lib/signupFormValues';
 import type { Car } from '../../types/car';
-import type { RaceEventDetail } from '../../types/event';
+import { SIM_LABELS, type EventSignup, type RaceEventDetail } from '../../types/event';
 import type { EventTeam } from '../../types/eventTeam';
 import type { IracingTeam } from '../../types/iracingTeam';
 import { formatRaceLength } from '../../types/raceLength';
@@ -27,11 +30,16 @@ export default function EventTeamBuildingPage() {
   const [event, setEvent] = useState<RaceEventDetail | null>(null);
   const [driverNames, setDriverNames] = useState<Record<string, string>>({});
   const [driverIracingCustIds, setDriverIracingCustIds] = useState<Record<string, string | null>>({});
+  const [rosterMembers, setRosterMembers] = useState<{ userId: string; name: string }[]>([]);
+  const [rosterGuests, setRosterGuests] = useState<{ profileId: string; name: string }[]>([]);
   const [cars, setCars] = useState<Car[]>([]);
   const [teams, setTeams] = useState<EventTeam[]>([]);
   const [iracingTeams, setIracingTeams] = useState<IracingTeam[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The signup being edited in the modal on a driver's behalf. */
+  const [adminEditing, setAdminEditing] = useState<EventSignup | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const load = () => {
     if (id) void eventsApi.getById(id).then(setEvent);
@@ -48,6 +56,19 @@ export default function EventTeamBuildingPage() {
     void driversApi.list().then((drivers) => {
       setDriverNames(Object.fromEntries(drivers.map((d) => [d.userId, d.iracingName ?? d.displayName])));
       setDriverIracingCustIds(Object.fromEntries(drivers.map((d) => [d.userId, d.iracingCustomerId])));
+      // Only drivers with a portal account can be signed up; guest drivers (no userId) can't.
+      setRosterMembers(
+        drivers
+          .filter((d): d is typeof d & { userId: string } => d.userId !== null)
+          .map((d) => ({ userId: d.userId, name: d.iracingName ?? d.displayName }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      setRosterGuests(
+        drivers
+          .filter((d) => d.userId === null)
+          .map((d) => ({ profileId: d.id, name: d.iracingName ?? d.displayName }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
     });
     void carsApi.list().then(setCars);
     void iracingTeamsApi.list().then(setIracingTeams);
@@ -59,7 +80,7 @@ export default function EventTeamBuildingPage() {
   async function handleReopenSignups() {
     if (!id) return;
     const ok = await confirm(
-      'Reopen signups for this event? Drivers will be able to change their availability again.',
+      'Reopen signups for this event? New drivers will be able to sign up again (drivers already signed up can edit their availability either way).',
       { confirmLabel: 'Reopen Signups' },
     );
     if (!ok) return;
@@ -70,6 +91,40 @@ export default function EventTeamBuildingPage() {
       navigate(`/events/${id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to reopen signups');
+      setBusy(false);
+    }
+  }
+
+  async function handleAdminSubmit(signup: EventSignup, values: SignupFormValues) {
+    if (!id) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await eventsApi.updateSignupDetails(id, signup.id, formValuesToSignupInput(values));
+      load();
+      setAdminEditing(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to save signup');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  /** Quick hour toggle straight from the availability grid — same admin endpoint as the full
+   * editor, but only touches the one signup's availableHours. */
+  async function handleToggleHour(row: AvailabilityGridRow, hourIso: string) {
+    if (!id) return;
+    const next = row.availableHours.includes(hourIso)
+      ? row.availableHours.filter((h) => h !== hourIso)
+      : [...row.availableHours, hourIso];
+    setBusy(true);
+    setError(null);
+    try {
+      await eventsApi.updateSignupDetails(id, row.id, { availableHours: next });
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to update availability');
+    } finally {
       setBusy(false);
     }
   }
@@ -104,7 +159,8 @@ export default function EventTeamBuildingPage() {
           <p className="font-heading text-xs tracking-[0.3em] text-w2w-red uppercase mb-2">Team Building</p>
           <h1 className="font-display font-black text-2xl uppercase text-w2w-white">{event.title}</h1>
           <p className="text-white/65 text-sm mt-1">
-            {event.track.name} · {event.carClasses.join(' / ')} · {formatRaceLength(event.raceLengthMinutes)}
+            {SIM_LABELS[event.sim]} · {event.track.name} · {event.carClasses.join(' / ')} ·{' '}
+            {formatRaceLength(event.raceLengthMinutes)}
           </p>
         </div>
         {event.status === 'SIGNUPS_CLOSED' && (
@@ -158,6 +214,15 @@ export default function EventTeamBuildingPage() {
                   {signup.status}
                 </span>
                 <button
+                  onClick={() => {
+                    setError(null);
+                    setAdminEditing(signup);
+                  }}
+                  className="text-white/65 hover:text-white text-[11px] font-heading uppercase tracking-wide transition-colors"
+                >
+                  Edit
+                </button>
+                <button
                   onClick={() => void handleDeleteSignup(signup.id)}
                   disabled={busy}
                   className="text-white/65 hover:text-w2w-red text-[11px] font-heading uppercase tracking-wide transition-colors disabled:opacity-40"
@@ -173,12 +238,15 @@ export default function EventTeamBuildingPage() {
       <h2 className="mt-10 font-heading text-xs tracking-[0.25em] text-white/65 uppercase mb-3">
         Hourly Driving Availability
       </h2>
-      <p className="text-white/65 text-xs mb-3">Who can take a stint, hour by hour, for each start time.</p>
+      <p className="text-white/65 text-xs mb-3">
+        Who can take a stint, hour by hour, for each start time. Click a cell to change a driver's availability.
+      </p>
       <HourlyAvailabilityGrid
         timeslots={event.timeslots}
         raceLengthMinutes={event.raceLengthMinutes}
         signups={activeSignups}
         driverNames={driverNames}
+        onToggleHour={(row, hourIso) => void handleToggleHour(row, hourIso)}
         emptyLabel="No one flagged this start time."
       />
 
@@ -193,11 +261,37 @@ export default function EventTeamBuildingPage() {
         driverNames={driverNames}
         driverIracingCustIds={driverIracingCustIds}
         signups={activeSignups}
+        isIracing={event.sim === 'IRACING'}
+        rosterMembers={rosterMembers}
+        rosterGuests={rosterGuests}
         onChange={() => {
           load();
           loadTeams();
         }}
       />
+
+      {adminEditing && (
+        <Modal
+          title={`Edit ${driverNames[adminEditing.userId] ?? 'driver'}'s signup`}
+          onClose={() => setAdminEditing(null)}
+        >
+          {error && (
+            <p role="alert" className="mb-3 text-w2w-red text-sm">
+              {error}
+            </p>
+          )}
+          <SignupForm
+            event={event}
+            cars={cars}
+            initial={signupToFormValues(adminEditing)}
+            submitLabel="Save Changes"
+            submitting={submitting}
+            driverLabel={driverNames[adminEditing.userId] ?? 'Driver'}
+            onSubmit={(values) => void handleAdminSubmit(adminEditing, values)}
+            onDiscard={() => setAdminEditing(null)}
+          />
+        </Modal>
+      )}
     </div>
   );
 }

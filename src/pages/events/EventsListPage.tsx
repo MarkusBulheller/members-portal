@@ -119,7 +119,14 @@ export default function EventsListPage() {
               className="flex items-center justify-between bg-w2w-charcoal border border-white/10 hover:border-w2w-red/50 px-5 py-4 transition-colors"
             >
               <div>
-                <p className="font-heading font-semibold text-white text-sm">{event.title}</p>
+                <p className="font-heading font-semibold text-white text-sm">
+                  {event.title}
+                  {event.sim === 'LMU' && (
+                    <span className="ml-2 px-1.5 py-0.5 text-[10px] font-heading uppercase tracking-wide bg-white/10 text-white/70">
+                      LMU
+                    </span>
+                  )}
+                </p>
                 <p className="text-white/65 text-xs mt-0.5">
                   {event.track.name} · {event.carClasses.join(' / ')} ·{' '}
                   {new Date(event.startsAt).toLocaleString(undefined, {

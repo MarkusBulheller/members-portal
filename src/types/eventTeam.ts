@@ -1,3 +1,5 @@
+import type { EventTeamDummyDriver } from './eventTeamDummyDriver';
+
 export interface EventTeam {
   id: string;
   eventId: string;
@@ -23,9 +25,13 @@ export interface EventTeam {
   raceStartOffsetMinutes: string | null;
   /** Fuel burned on the formation lap, in liters — comes off the first stint's usable tank only. */
   formationLapFuelLiters: string | null;
+  /** Tank size override in liters; null = use the car's own tank size. */
+  fuelTankCapacityLiters: string | null;
   /** In-game clock time ("HH:MM") this crew's first stint starts at — iRacing sessions can be
    * configured to start at any sim time-of-day regardless of the real-world green-flag time. */
   simStartTimeOfDay: string | null;
+  /** Placeholder / roster-guest drivers on this crew — only present on the list response. */
+  dummyDrivers?: EventTeamDummyDriver[];
   createdAt: string;
   updatedAt: string;
 }
@@ -39,6 +45,7 @@ export interface EventTeamSettingsInput {
   fuelUsagePerLapLiters?: number | null;
   raceStartOffsetMinutes?: number | null;
   formationLapFuelLiters?: number | null;
+  fuelTankCapacityLiters?: number | null;
 }
 
 export interface CreateEventTeamInput extends EventTeamSettingsInput {

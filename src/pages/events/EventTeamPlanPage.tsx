@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import HourlyAvailabilityGrid from '../../components/HourlyAvailabilityGrid';
+import HourlyAvailabilityGrid, { type AvailabilityGridRow } from '../../components/HourlyAvailabilityGrid';
 import StintTimeline from '../../components/StintTimeline';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -9,6 +9,7 @@ import { carsApi } from '../../lib/api/cars';
 import { driversApi } from '../../lib/api/drivers';
 import { eventsApi } from '../../lib/api/events';
 import { eventTeamDriverSettingsApi } from '../../lib/api/eventTeamDriverSettings';
+import { eventTeamDummyDriversApi } from '../../lib/api/eventTeamDummyDrivers';
 import { eventTeamStintsApi } from '../../lib/api/eventTeamStints';
 import { eventTeamsApi } from '../../lib/api/eventTeams';
 import { iracingSeriesApi } from '../../lib/api/iracingSeries';
@@ -18,6 +19,7 @@ import type { Car } from '../../types/car';
 import type { RaceEventDetail } from '../../types/event';
 import type { CreateEventTeamInput, EventTeam, EventTeamSettingsInput } from '../../types/eventTeam';
 import type { EventTeamDriverSettings } from '../../types/eventTeamDriverSettings';
+import type { EventTeamDummyDriver } from '../../types/eventTeamDummyDriver';
 import type { EventTeamStint } from '../../types/eventTeamStint';
 import type { WeatherForecastPoint } from '../../types/iracingWeatherForecast';
 
@@ -55,6 +57,7 @@ const SETTING_FIELDS: SettingField[] = [
   { key: 'lapTimeWetSeconds', label: 'Lap Time (Wet)', unit: 'mm:ss.ms', type: 'laptime' },
   { key: 'fuelUsagePerLapLiters', label: 'Fuel Usage / Lap', unit: 'L', step: '0.01', type: 'number' },
   { key: 'formationLapFuelLiters', label: 'Formation Lap Fuel', unit: 'L', step: '0.01', type: 'number' },
+  { key: 'fuelTankCapacityLiters', label: 'Fuel Tank Size', unit: 'L', step: '0.1', type: 'number' },
   { key: 'simStartTimeOfDay', label: 'Sim Start Time', unit: 'HH:MM', type: 'time' },
 ];
 
@@ -287,13 +290,19 @@ export default function EventTeamPlanPage() {
   const [team, setTeam] = useState<EventTeam | null>(null);
   const [stints, setStints] = useState<EventTeamStint[]>([]);
   const [cars, setCars] = useState<Car[]>([]);
-  const [driverNames, setDriverNames] = useState<Record<string, string>>({});
+  const [realDriverNames, setRealDriverNames] = useState<Record<string, string>>({});
+  // Roster entry id -> current display name, so a guest added from the Drivers roster shows the
+  // roster's name even if it was renamed after being added.
+  const [profileNames, setProfileNames] = useState<Record<string, string>>({});
   const [driverTimezones, setDriverTimezones] = useState<Record<string, string | null>>({});
   // Endurance-planning flags from each driver's own profile — feeds handleGenerateFullPlan's
   // driver-assignment pass (successive-stint cap, night-driving avoidance, starting-driver pick).
   const [driverProfiles, setDriverProfiles] = useState<Record<string, DriverAssignmentProfile>>({});
   const [weatherPoints, setWeatherPoints] = useState<WeatherForecastPoint[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
+  // The event-wide iRacing fuel limit (% of max tank), edited here but stored on the event — every
+  // team in the event races the same session, so it isn't a per-team value like the fields above.
+  const [fuelLimitInput, setFuelLimitInput] = useState('');
   const [carInfo, setCarInfo] = useState<{
     tankCapacityLiters: number | null;
     fuelUsagePerLapLiters?: string;
@@ -307,6 +316,8 @@ export default function EventTeamPlanPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'strategy' | 'availability' | 'settings'>('strategy');
   const [driverSettings, setDriverSettings] = useState<EventTeamDriverSettings[]>([]);
+  const [dummyDrivers, setDummyDrivers] = useState<EventTeamDummyDriver[]>([]);
+  const [newDummyName, setNewDummyName] = useState('');
   // Drives both the "active stint" row highlight below and stint locking (past stints, once the
   // next one has actually started, stop being editable) — same refresh strategy as StintTimeline's
   // own live marker: a 1s interval, plus a forced read on tab/window focus since browsers throttle
@@ -370,9 +381,17 @@ export default function EventTeamPlanPage() {
     void loadStints();
   }, [id, teamId]);
   useEffect(loadDriverSettings, [id, teamId]);
+  const loadDummyDrivers = () => {
+    if (id && teamId) void eventTeamDummyDriversApi.list(id, teamId).then(setDummyDrivers);
+  };
+  useEffect(loadDummyDrivers, [id, teamId]);
+  const refreshEvent = () => {
+    if (id) void eventsApi.getById(id).then(setEvent);
+  };
   useEffect(() => {
     void driversApi.list().then((drivers) => {
-      setDriverNames(Object.fromEntries(drivers.map((d) => [d.userId, d.iracingName ?? d.displayName])));
+      setRealDriverNames(Object.fromEntries(drivers.map((d) => [d.userId, d.iracingName ?? d.displayName])));
+      setProfileNames(Object.fromEntries(drivers.map((d) => [d.id, d.iracingName ?? d.displayName])));
       setDriverTimezones(Object.fromEntries(drivers.map((d) => [d.userId, d.timezone ?? null])));
       setDriverProfiles(
         Object.fromEntries(
@@ -411,9 +430,14 @@ export default function EventTeamPlanPage() {
       fuelUsagePerLapLiters: team.fuelUsagePerLapLiters ?? '',
       raceStartOffsetMinutes: team.raceStartOffsetMinutes ?? '',
       formationLapFuelLiters: team.formationLapFuelLiters ?? '',
+      fuelTankCapacityLiters: team.fuelTankCapacityLiters ?? '',
       simStartTimeOfDay: team.simStartTimeOfDay ?? '',
     });
   }, [team]);
+
+  useEffect(() => {
+    setFuelLimitInput(event?.fuelLimitPercent != null ? String(Number(event.fuelLimitPercent)) : '');
+  }, [event?.fuelLimitPercent]);
 
   // Pull the tank size + this car's per-track fuel/pit defaults from the Cars module, when the
   // team hasn't set its own fuel/pit values yet — a head start, not a hard override.
@@ -435,6 +459,30 @@ export default function EventTeamPlanPage() {
   const teamMembers = useMemo(
     () => (event?.signups ?? []).filter((s) => s.eventTeamId === teamId && s.status !== 'CANCELLED'),
     [event, teamId],
+  );
+
+  // Everyone who can be given a stint on this team: the signed-up members assigned to it, plus any
+  // dummy placeholders an admin added. A dummy's own id fills the driver-id slot a member's userId
+  // does, so stints, per-driver settings and colours need no special-casing beyond this list.
+  const planDrivers = useMemo(
+    () => [
+      ...teamMembers.map((s) => ({ userId: s.userId, availableHours: s.availableHours, kind: 'member' as const })),
+      ...dummyDrivers.map((d) => ({
+        userId: d.id,
+        availableHours: d.availableHours,
+        kind: d.driverProfileId ? ('guest' as const) : ('dummy' as const),
+      })),
+    ],
+    [teamMembers, dummyDrivers],
+  );
+  const driverNames = useMemo(
+    () => ({
+      ...realDriverNames,
+      ...Object.fromEntries(
+        dummyDrivers.map((d) => [d.id, (d.driverProfileId ? profileNames[d.driverProfileId] : undefined) ?? d.name]),
+      ),
+    }),
+    [realDriverNames, dummyDrivers, profileNames],
   );
 
   const chosenTimeslot = useMemo(
@@ -485,6 +533,26 @@ export default function EventTeamPlanPage() {
     }
   }
 
+  async function handleFuelLimitBlur() {
+    if (!id) return;
+    const raw = fuelLimitInput.trim();
+    const value = raw === '' ? null : Number(raw);
+    if (value !== null && (!Number.isFinite(value) || value < 1 || value > 100)) {
+      setError('Fuel Limit: enter a percentage between 1 and 100, or leave it blank for no limit.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await eventsApi.update(id, { fuelLimitPercent: value });
+      refreshEvent();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to save fuel limit');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleDriverSettingChange(
     userId: string,
     field: 'lapTimeDrySeconds' | 'lapTimeWetSeconds' | 'fuelUsagePerLapLiters',
@@ -517,6 +585,69 @@ export default function EventTeamPlanPage() {
     }
   }
 
+  async function handleAddDummy() {
+    const name = newDummyName.trim();
+    if (!id || !teamId || !name) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await eventTeamDummyDriversApi.create(id, teamId, { name });
+      setNewDummyName('');
+      loadDummyDrivers();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to add dummy driver');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRemoveDummy(dummy: EventTeamDummyDriver) {
+    if (!id || !teamId) return;
+    const ok = await confirm(`Remove ${dummy.name}? Any stints assigned to them become unassigned.`, {
+      confirmLabel: 'Remove',
+    });
+    if (!ok) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await eventTeamDummyDriversApi.remove(id, teamId, dummy.id);
+      loadDummyDrivers();
+      void loadStints();
+      loadDriverSettings();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to remove dummy driver');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Cell click in the availability grid: a dummy's hours go through the dummy endpoint, a
+   * member's through the signup endpoints (admin: any member via the admin edit; a member: only
+   * their own row). A dummy with no hours set is "free everywhere", so its first toggle seeds the
+   * full slot minus the clicked hour: clicking a lit-up cell turns it off, as it looks like it should. */
+  async function handleToggleAvailabilityHour(row: AvailabilityGridRow, hourIso: string, slotHours: string[]) {
+    if (!id || !teamId) return;
+    const current = row.unrestricted ? slotHours : row.availableHours;
+    const next = current.includes(hourIso) ? current.filter((h) => h !== hourIso) : [...current, hourIso];
+    setBusy(true);
+    setError(null);
+    try {
+      const dummy = dummyDrivers.find((d) => d.id === row.driverId);
+      if (dummy) {
+        await eventTeamDummyDriversApi.update(id, teamId, dummy.id, { availableHours: next });
+        loadDummyDrivers();
+      } else {
+        if (isAdmin) await eventsApi.updateSignupDetails(id, row.id, { availableHours: next });
+        else await eventsApi.signup(id, { availableHours: next });
+        refreshEvent();
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to update availability');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const driverSettingsByUserId = Object.fromEntries(driverSettings.map((s) => [s.userId, s]));
 
   const fuelUsagePerLap = parseDecimal(settings.fuelUsagePerLapLiters ?? null);
@@ -527,16 +658,22 @@ export default function EventTeamPlanPage() {
   const driveSecondsRaw = parseDecimal(settings.pitstopDrivethroughSeconds ?? null);
   const raceStartOffsetMinutes = parseDecimal(settings.raceStartOffsetMinutes ?? null) ?? 0;
   const formationLapFuelLiters = parseDecimal(settings.formationLapFuelLiters ?? null) ?? 0;
+  // The tank the plan actually works with: the team's own override if one is set, otherwise the
+  // car's tank size — then, on an iRacing event with a fuel limit, only that percentage of it.
+  const tankOverrideLiters = parseDecimal(settings.fuelTankCapacityLiters ?? null);
+  const maxTankLiters = tankOverrideLiters ?? carInfo.tankCapacityLiters;
+  const fuelLimitPercent = event?.sim === 'IRACING' ? (numOrNull(fuelLimitInput) ?? 100) : 100;
+  const tankCapacityLiters = maxTankLiters !== null ? (maxTankLiters * fuelLimitPercent) / 100 : null;
   const maxStintLaps =
-    carInfo.tankCapacityLiters && fuelUsagePerLap && fuelUsagePerLap > 0
-      ? Math.floor(carInfo.tankCapacityLiters / fuelUsagePerLap)
+    tankCapacityLiters && fuelUsagePerLap && fuelUsagePerLap > 0
+      ? Math.floor(tankCapacityLiters / fuelUsagePerLap)
       : null;
   const maxStintMinutes = maxStintLaps !== null && lapTimeDrySeconds ? (maxStintLaps * lapTimeDrySeconds) / 60 : null;
 
   // "All values set on top" — every Settings field plus the car's tank size — gates the full-plan
   // generator, since a missing figure would make the generated stint lengths meaningless.
   const readyToGeneratePlan =
-    carInfo.tankCapacityLiters !== null &&
+    tankCapacityLiters !== null &&
     fuelUsagePerLap !== null &&
     lapTimeDrySeconds !== null &&
     lapTimeWetSeconds !== null &&
@@ -609,10 +746,10 @@ export default function EventTeamPlanPage() {
       // only the first stint pays for it out of its own tank; every later stint begins from a
       // full tank at pit exit, no formation lap involved.
       const usableTankLiters =
-        carInfo.tankCapacityLiters !== null
+        tankCapacityLiters !== null
           ? index === 0
-            ? Math.max(0, carInfo.tankCapacityLiters - formationLapFuelLiters)
-            : carInfo.tankCapacityLiters
+            ? Math.max(0, tankCapacityLiters - formationLapFuelLiters)
+            : tankCapacityLiters
           : null;
       const fuelLimitedLaps =
         usableTankLiters !== null && effectiveFuelUsage && effectiveFuelUsage > 0
@@ -647,7 +784,7 @@ export default function EventTeamPlanPage() {
 
       const estLaps = effectiveLapTime && effectiveLapTime > 0 ? Math.floor((durationMinutes * 60) / effectiveLapTime) : null;
 
-      const signup = teamMembers.find((s) => s.userId === stint.driverUserId);
+      const planDriver = planDrivers.find((d) => d.userId === stint.driverUserId);
       const hours =
         startMs !== null && timeslotStartMs !== null
           ? overlappingRaceHours(timeslotStartMs, startMs, startMs + (durationMinutes || 60) * 60_000)
@@ -655,7 +792,10 @@ export default function EventTeamPlanPage() {
       // Warn only if some hour the stint actually spans is unmarked — a stint fully inside one
       // marked hour (e.g. 09:00–09:47 when only 09:00 is flagged) must not warn.
       const availabilityWarning =
-        signup && signup.availableHours.length > 0 && hours.length > 0 && !hours.every((h) => signup.availableHours.includes(h));
+        planDriver &&
+        planDriver.availableHours.length > 0 &&
+        hours.length > 0 &&
+        !hours.every((h) => planDriver.availableHours.includes(h));
 
       baseRow = {
         stint,
@@ -922,9 +1062,13 @@ export default function EventTeamPlanPage() {
     return <p className="text-white/65 text-sm">Loading...</p>;
   }
 
+  // Admins can edit anyone's hours; a member only their own, and only while the event can still
+  // take availability changes (the backend allows PUBLISHED and SIGNUPS_CLOSED).
+  const canEditAnyAvailability = isAdmin || event.status === 'PUBLISHED' || event.status === 'SIGNUPS_CLOSED';
+
   async function handleGenerateFullPlan() {
     if (!id || !teamId || maxStintMinutes === null) return;
-    const canAssignDrivers = raceStartMs !== null && timeslotStartMs !== null && teamMembers.length > 0;
+    const canAssignDrivers = raceStartMs !== null && timeslotStartMs !== null && planDrivers.length > 0;
     const ok = await confirm(
       `Generate a full stint plan for the whole race?${stints.length > 0 ? ' This replaces the current stint list.' : ''}${
         canAssignDrivers
@@ -943,7 +1087,7 @@ export default function EventTeamPlanPage() {
             raceStartMs,
             timeslotStartMs,
             pitMinutes,
-            teamMembers.map((s) => ({ userId: s.userId, availableHours: s.availableHours })),
+            planDrivers.map((d) => ({ userId: d.userId, availableHours: d.availableHours })),
             driverProfiles,
           )
         : durations.map(() => null);
@@ -973,7 +1117,7 @@ export default function EventTeamPlanPage() {
     durationMinutes,
   }));
   const driverColorOrder = orderedDriverIds(timelineStints);
-  const driverAvailability = Object.fromEntries(teamMembers.map((s) => [s.userId, s.availableHours]));
+  const driverAvailability = Object.fromEntries(planDrivers.map((d) => [d.userId, d.availableHours]));
 
   return (
     <div>
@@ -1057,7 +1201,9 @@ export default function EventTeamPlanPage() {
           const placeholder =
             field.key === 'fuelUsagePerLapLiters' || field.key === 'pitstopDrivethroughSeconds'
               ? carInfo[field.key]
-              : undefined;
+              : field.key === 'fuelTankCapacityLiters'
+                ? (carInfo.tankCapacityLiters?.toString() ?? undefined)
+                : undefined;
           return (
             <label key={field.key} className="flex flex-col gap-1.5">
               <span className="font-heading text-[11px] tracking-[0.15em] uppercase text-white/65">
@@ -1077,10 +1223,31 @@ export default function EventTeamPlanPage() {
             </label>
           );
         })}
+        {event.sim === 'IRACING' && (
+          <label className="flex flex-col gap-1.5">
+            <span className="font-heading text-[11px] tracking-[0.15em] uppercase text-white/65">
+              Fuel Limit <span className="text-white/70 normal-case tracking-normal">(% of tank, whole event)</span>
+            </span>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              step="0.1"
+              placeholder="No limit"
+              value={fuelLimitInput}
+              onChange={(e) => setFuelLimitInput(e.target.value)}
+              onBlur={() => void handleFuelLimitBlur()}
+              disabled={busy || !isAdmin}
+              className="input"
+            />
+          </label>
+        )}
       </div>
-      {carInfo.tankCapacityLiters !== null && (
+      {tankCapacityLiters !== null && (
         <p className="text-white/65 text-xs mt-3">
-          Tank: {carInfo.tankCapacityLiters}L
+          Tank: {Math.round(tankCapacityLiters * 10) / 10}L
+          {fuelLimitPercent < 100 && ` (${fuelLimitPercent}% fuel limit of ${maxTankLiters}L)`}
+          {tankOverrideLiters !== null && ' · tank size overridden'}
           {maxStintLaps !== null && ` · ${maxStintLaps} laps/tank`}
           {maxStintMinutes !== null && ` · ~${formatDuration(maxStintMinutes)}/tank`}
         </p>
@@ -1089,7 +1256,7 @@ export default function EventTeamPlanPage() {
       <p className="mt-8 font-heading text-[11px] tracking-[0.15em] text-white/65 uppercase mb-3">
         Per-Driver Pace &amp; Fuel
       </p>
-      {teamMembers.length === 0 ? (
+      {planDrivers.length === 0 ? (
         <p className="text-white/65 text-sm">No drivers assigned to this team yet.</p>
       ) : (
         <div className="overflow-x-auto border border-white/10">
@@ -1103,11 +1270,14 @@ export default function EventTeamPlanPage() {
               </tr>
             </thead>
             <tbody>
-              {teamMembers.map((s) => {
+              {planDrivers.map((s) => {
                 const ds = driverSettingsByUserId[s.userId];
                 return (
                   <tr key={s.userId} className="border-b border-white/5">
-                    <td className="py-1.5 px-3 text-white/80">{driverNames[s.userId] ?? 'Unknown driver'}</td>
+                    <td className="py-1.5 px-3 text-white/80">
+                      {driverNames[s.userId] ?? 'Unknown driver'}
+                      {s.kind !== 'member' && <span className="ml-2 text-[10px] text-white/50 uppercase">{s.kind}</span>}
+                    </td>
                     <td className="py-1.5 px-3">
                       <input
                         type="text"
@@ -1148,23 +1318,104 @@ export default function EventTeamPlanPage() {
         </div>
       )}
       <p className="text-white/70 text-[11px] mt-2">Blank fields fall back to the team baseline above.</p>
+
+      {(isAdmin || dummyDrivers.length > 0) && (
+        <div className="mt-8">
+          <p className="font-heading text-[11px] tracking-[0.15em] text-white/65 uppercase mb-3">Dummy Drivers</p>
+          <p className="text-white/65 text-xs mb-3 max-w-xl">
+            Drivers without a portal signup: free-text placeholders, or guests added from the Drivers roster on the
+            team building page. They can be given stints like any driver. With no hours set they count as free for
+            any stint; set their hours on the Availability tab.
+          </p>
+          {dummyDrivers.length > 0 && (
+            <ul className="mb-3 space-y-1">
+              {dummyDrivers.map((d) => (
+                <li key={d.id} className="flex items-center gap-3 text-sm text-white/80">
+                  <span>{driverNames[d.id] ?? d.name}</span>
+                  {d.driverProfileId && (
+                    <span className="text-[10px] text-white/50 uppercase">guest</span>
+                  )}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => void handleRemoveDummy(d)}
+                      disabled={busy}
+                      className="text-white/65 hover:text-w2w-red text-[11px] font-heading uppercase tracking-wide transition-colors disabled:opacity-40"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {isAdmin && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleAddDummy();
+              }}
+              className="flex gap-2 max-w-sm"
+            >
+              <input
+                type="text"
+                aria-label="Dummy driver name"
+                placeholder="e.g. Guest 1"
+                maxLength={60}
+                value={newDummyName}
+                onChange={(e) => setNewDummyName(e.target.value)}
+                className="input"
+              />
+              <button
+                type="submit"
+                disabled={busy || newDummyName.trim() === ''}
+                className="px-4 py-2 bg-w2w-red hover:bg-w2w-red-bright disabled:opacity-40 text-on-accent font-heading font-bold text-xs uppercase tracking-wide transition-colors shrink-0"
+              >
+                Add
+              </button>
+            </form>
+          )}
+        </div>
+      )}
         </div>
       )}
 
       {activeTab === 'availability' && (
         <div className="mt-6">
-      {teamMembers.length === 0 ? (
+      {planDrivers.length === 0 ? (
         <p className="text-white/65 text-sm">No drivers assigned to this team yet.</p>
       ) : !chosenTimeslot ? (
         <p className="text-white/65 text-sm">Pick this team's timeslot to see hourly availability.</p>
       ) : (
-        <HourlyAvailabilityGrid
-          timeslots={[chosenTimeslot]}
-          raceLengthMinutes={event.raceLengthMinutes}
-          signups={teamMembers}
-          driverNames={driverNames}
-          emptyLabel="No one on this team flagged this start time."
-        />
+        <>
+          {canEditAnyAvailability && (
+            <p className="text-white/65 text-xs mb-3">
+              {isAdmin
+                ? "Click a cell to change a driver's availability."
+                : 'Click a cell in your own row to change your availability.'}
+            </p>
+          )}
+          <HourlyAvailabilityGrid
+            timeslots={[chosenTimeslot]}
+            raceLengthMinutes={event.raceLengthMinutes}
+            signups={teamMembers}
+            driverNames={driverNames}
+            extraRows={dummyDrivers.map((d) => ({
+              id: d.id,
+              driverId: d.id,
+              name: driverNames[d.id] ?? d.name,
+              availableHours: d.availableHours,
+              unrestricted: d.availableHours.length === 0,
+            }))}
+            onToggleHour={
+              canEditAnyAvailability
+                ? (row, hourIso, slotHours) => void handleToggleAvailabilityHour(row, hourIso, slotHours)
+                : undefined
+            }
+            canEditRow={(row) => isAdmin || row.driverId === user?.id}
+            emptyLabel="No one on this team flagged this start time."
+          />
+        </>
       )}
         </div>
       )}
@@ -1324,9 +1575,10 @@ export default function EventTeamPlanPage() {
                           className="input py-1 text-xs w-36 disabled:opacity-60"
                         >
                           <option value="">Unassigned</option>
-                          {teamMembers.map((s) => (
-                            <option key={s.userId} value={s.userId}>
-                              {driverNames[s.userId] ?? 'Unknown driver'}
+                          {planDrivers.map((d) => (
+                            <option key={d.userId} value={d.userId}>
+                              {driverNames[d.userId] ?? 'Unknown driver'}
+                              {d.kind !== 'member' ? ` (${d.kind})` : ''}
                             </option>
                           ))}
                         </select>
