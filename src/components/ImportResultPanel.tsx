@@ -29,9 +29,15 @@ export default function ImportResultPanel({
       .list()
       .then((list) => {
         if (cancelled) return;
-        setTeams(list);
+        // iRacing's team ids can come back negative (the form team entries use in results); the
+        // import wants the plain positive id, so show and send that, and drop duplicates.
+        const seen = new Set<number>();
+        const normalised = list
+          .map((team) => ({ ...team, teamId: Math.abs(team.teamId) }))
+          .filter((team) => !seen.has(team.teamId) && !!seen.add(team.teamId));
+        setTeams(normalised);
         // Default to the first team (the common case is a single team) unless one is already set.
-        setTeamId((current) => current || (list[0] ? String(list[0].teamId) : ''));
+        setTeamId((current) => current || (normalised[0] ? String(normalised[0].teamId) : ''));
       })
       .catch(() => {
         if (!cancelled) setTeams([]);
