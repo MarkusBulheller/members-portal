@@ -20,6 +20,11 @@ export default function Modal({
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  // Callers pass inline arrows; read the latest through a ref so the keydown listener is added once.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   // Move focus into the dialog on open, and back to whatever triggered it on close — without
   // this, a keyboard/screen-reader user tabbing has no indication a dialog opened at all, and
@@ -34,7 +39,7 @@ export default function Modal({
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab' || !dialogRef.current) return;
@@ -56,7 +61,7 @@ export default function Modal({
     }
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={onClose}>
@@ -65,20 +70,31 @@ export default function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="bg-w2w-charcoal border border-white/10 max-w-lg w-full max-h-[85vh] overflow-y-auto p-6"
+        className="cut bg-ds-panel text-ds-ink max-w-lg w-full max-h-[85vh] overflow-y-auto p-6"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-4">
-          <h2 id={titleId} className="font-display font-black text-lg uppercase text-w2w-white">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h2 id={titleId} className="h2 min-w-0">
             {title}
           </h2>
           <button
             ref={closeButtonRef}
             onClick={onClose}
             aria-label="Close"
-            className="h-8 w-8 flex items-center justify-center text-white/65 hover:text-white text-2xl leading-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-w2w-red rounded-sm"
+            className="cut-xs h-9 w-9 shrink-0 flex items-center justify-center text-ds-muted hover:text-ds-ink hover:bg-ds-raised transition-colors"
           >
-            ×
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.2}
+              strokeLinecap="square"
+              aria-hidden="true"
+            >
+              <path d="M5 5l14 14M19 5L5 19" />
+            </svg>
           </button>
         </div>
         {children}

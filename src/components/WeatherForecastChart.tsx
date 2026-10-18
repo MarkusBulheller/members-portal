@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import {
   Area,
   AreaChart,
@@ -45,7 +46,7 @@ function computeTicks(data: ChartDatum[], targetCount = 8): number[] {
 function RainValueLabel({ x, y, value }: any) {
   if (x === undefined || y === undefined || !value || value <= 0) return null;
   return (
-    <text x={x} y={Number(y) - 8} textAnchor="middle" fontSize={9} fill="#93c5fd">
+    <text x={x} y={Number(y) - 8} textAnchor="middle" fontSize={9} fill="#3B82F6">
       {Math.round(value)}%
     </text>
   );
@@ -60,8 +61,8 @@ function RainDot({ cx, cy, payload }: any) {
       cx={cx}
       cy={cy}
       r={isStart ? 4.5 : 2.5}
-      fill={isStart ? '#ff2a1f' : '#3B82F6'}
-      stroke={isStart ? '#0a0a0b' : 'none'}
+      fill={isStart ? 'var(--color-w2w-red)' : '#3B82F6'}
+      stroke={isStart ? 'var(--color-ds-panel)' : 'none'}
       strokeWidth={isStart ? 1.5 : 0}
     />
   );
@@ -71,9 +72,9 @@ function ChartTooltip({ active, payload }: TooltipContentProps) {
   if (!active || !payload || payload.length === 0) return null;
   const datum = payload[0]?.payload as ChartDatum;
   return (
-    <div className="bg-w2w-black border border-white/15 px-3 py-2 text-xs">
-      <p className="text-white/65">{offsetLabel(datum.timeOffsetHours)}</p>
-      <p className="text-white font-semibold">{Math.round(datum.rainChance)}% chance of rain</p>
+    <div className="cut-xs bg-ds-raised px-3 py-2 text-xs">
+      <p className="m-0 text-ds-muted">{offsetLabel(datum.timeOffsetHours)}</p>
+      <p className="m-0 font-bold text-ds-ink">{Math.round(datum.rainChance)}% chance of rain</p>
     </div>
   );
 }
@@ -84,19 +85,23 @@ function ChartTooltip({ active, payload }: TooltipContentProps) {
  * stride math). precip_chance is fixed-point scaled by x100, like the other numeric fields on
  * this object — see types/iracingWeatherForecast.ts. */
 export default function WeatherForecastChart({ points }: { points: WeatherForecastPoint[] }) {
-  if (points.length === 0) {
-    return <p className="text-white/65 text-sm">No forecast data.</p>;
-  }
+  // Memoised so unrelated parent re-renders hand Recharts the same data/ticks identity (no
+  // re-layout, no replayed area animation).
+  const { data, ticks } = useMemo(() => {
+    const chartData: ChartDatum[] = points.map((p) => ({
+      timeOffsetHours: p.time_offset / 60,
+      rainChance: p.precip_chance / 100,
+    }));
+    return { data: chartData, ticks: chartData.length > 0 ? computeTicks(chartData) : [] };
+  }, [points]);
 
-  const data: ChartDatum[] = points.map((p) => ({
-    timeOffsetHours: p.time_offset / 60,
-    rainChance: p.precip_chance / 100,
-  }));
-  const ticks = computeTicks(data);
+  if (points.length === 0) {
+    return <p className="text-ds-muted text-sm">No forecast data.</p>;
+  }
 
   return (
     <div>
-      <p className="font-heading text-[10px] tracking-[0.2em] text-white/65 uppercase mb-2">Chance of Rain</p>
+      <p className="lbl m-0 mb-2 text-xs">Chance of rain</p>
       <ResponsiveContainer width="100%" height={220}>
         <AreaChart data={data} margin={{ top: 16, right: 16, bottom: 0, left: 0 }}>
           <defs>
@@ -106,7 +111,7 @@ export default function WeatherForecastChart({ points }: { points: WeatherForeca
             </linearGradient>
           </defs>
           <CartesianGrid stroke="var(--color-chart-grid)" vertical={false} />
-          <ReferenceLine x={0} stroke="#ff2a1f" strokeDasharray="3 3" strokeOpacity={0.6} />
+          <ReferenceLine x={0} stroke="var(--color-w2w-red)" strokeDasharray="3 3" strokeOpacity={0.6} />
           <XAxis
             dataKey="timeOffsetHours"
             type="number"
@@ -133,7 +138,7 @@ export default function WeatherForecastChart({ points }: { points: WeatherForeca
             strokeWidth={2}
             fill="url(#rainFill)"
             dot={RainDot}
-            activeDot={{ r: 5, fill: '#ff2a1f' }}
+            activeDot={{ r: 5, fill: 'var(--color-w2w-red)' }}
             label={RainValueLabel}
           />
         </AreaChart>

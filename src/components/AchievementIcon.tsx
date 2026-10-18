@@ -21,6 +21,8 @@ const PATHS: Record<AchievementIconKey, string> = {
   BOLT: 'M13 2 4 14h6l-1 8 9-12h-6l1-8Z',
 };
 
+/** Stroke style follows the design's icon language (Profile board's achievement icons): 1.7px,
+ * square caps, mitered joins. */
 export default function AchievementIcon({
   icon,
   className = 'h-6 w-6',
@@ -30,7 +32,15 @@ export default function AchievementIcon({
 }) {
   const d = PATHS[icon] ?? PATHS.TROPHY;
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="square"
+      strokeLinejoin="miter"
+      className={className}
+    >
       <path d={d} />
     </svg>
   );

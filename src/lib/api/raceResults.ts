@@ -1,12 +1,13 @@
 import { api } from '../api';
-import type { RaceResult } from '../../types/raceResult';
+import type { RaceResult, RaceResultSummary } from '../../types/raceResult';
 
 export const raceResultsApi = {
-  list: () => api.get<RaceResult[]>('/race-results'),
+  /** Summary rows (no driverStints / laps). */
+  list: () => api.get<RaceResultSummary[]>('/race-results'),
   listByDriver: (driverProfileId: string) =>
     api.get<RaceResult[]>(`/race-results/by-driver/${driverProfileId}`),
-  listByCar: (carId: string) => api.get<RaceResult[]>(`/race-results/by-car/${carId}`),
-  listByTrack: (trackId: string) => api.get<RaceResult[]>(`/race-results/by-track/${trackId}`),
+  listByCar: (carId: string) => api.get<RaceResultSummary[]>(`/race-results/by-car/${carId}`),
+  listByTrack: (trackId: string) => api.get<RaceResultSummary[]>(`/race-results/by-track/${trackId}`),
   getById: (id: string) => api.get<RaceResult>(`/race-results/${id}`),
   getShared: (token: string) => api.get<RaceResult>(`/race-results/shared/${token}`),
   import: (subsessionId: number, teamId: number) =>

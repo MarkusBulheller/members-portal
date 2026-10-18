@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import AvatarUpload from '../../components/AvatarUpload';
-import CountryFlag from '../../components/CountryFlag';
+import { SwitchRow, StintsRow } from '../../components/RacePreferenceFields';
 import TimezoneAutocomplete from '../../components/TimezoneAutocomplete';
 import { driversApi } from '../../lib/api/drivers';
 import { licenseClassStyle } from '../../lib/iracingClass';
+import { initials } from '../../lib/initials';
 import type { DriverProfile } from '../../types/driver';
 
 /** Admin override of a linked member's own settings (timezone, race preferences, etc.) — same
@@ -17,9 +18,22 @@ export default function AdminEditMemberSettingsPage() {
   const [profile, setProfile] = useState<DriverProfile | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (id) void driversApi.getById(id).then(setProfile);
+    if (!id) return;
+    let cancelled = false;
+    driversApi
+      .getById(id)
+      .then((loaded) => {
+        if (!cancelled) setProfile(loaded);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : 'Failed to load the driver.');
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -48,146 +62,209 @@ export default function AdminEditMemberSettingsPage() {
   }
 
   if (!profile) {
-    return <p className="text-white/65 text-sm">Loading...</p>;
+    return loadError ? (
+      <p role="alert" className="m-0 text-sm text-ds-danger">
+        {loadError}
+      </p>
+    ) : (
+      <p className="m-0 text-sm text-ds-muted">Loading...</p>
+    );
   }
 
+  const name = profile.iracingName ?? profile.displayName;
+
   return (
-    <div className="max-w-xl">
-      <p className="font-heading text-xs tracking-[0.3em] text-w2w-red uppercase mb-2">Admin</p>
-      <h1 className="font-display font-black text-3xl uppercase text-w2w-white mb-8">
-        Edit {profile.iracingName ?? profile.displayName}'s Settings
-      </h1>
-
-      {error && (
-        <p role="alert" className="mb-6 text-sm text-w2w-red bg-w2w-red/10 border border-w2w-red/30 px-4 py-3">
-          {error}
-        </p>
-      )}
-
-      <div className="mb-8 bg-w2w-charcoal border border-white/10 p-5">
-        <AvatarUpload
-          avatarUrl={profile.avatarUrl}
-          displayName={profile.displayName}
-          onUpload={(file) => driversApi.uploadAvatarAsAdmin(profile.id, file).then(setProfile)}
-          onRemove={() => driversApi.removeAvatarAsAdmin(profile.id).then(setProfile)}
-        />
+    <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-5">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[13px] font-semibold text-ds-muted">
+        <Link to="/drivers" className="text-ds-muted hover:text-ds-ink">
+          Drivers
+        </Link>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="square"
+          aria-hidden="true"
+        >
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+        <span className="text-ds-ink">{name} · settings</span>
+      </nav>
+      <div className="flex max-w-[760px] flex-col gap-1">
+        <h1 className="m-0 text-[34px] font-extrabold leading-[1.1]">Member settings</h1>
+        <span className="text-ds-muted">Adjust planning settings for a member. Everything else is theirs to edit.</span>
       </div>
 
-      {profile.iracingCustomerId && (
-        <div className="mb-8 bg-w2w-charcoal border border-white/10 p-5">
-          <p className="font-heading text-xs tracking-[0.2em] uppercase text-white/65 mb-3">
-            iRacing Account (read-only — only {profile.displayName} can re-link it)
-          </p>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="font-heading text-[10px] tracking-[0.2em] uppercase text-white/65">Name</p>
-              <p className="text-white text-sm">{profile.iracingName ?? '—'}</p>
-            </div>
-            <div>
-              <p className="font-heading text-[10px] tracking-[0.2em] uppercase text-white/65">Location</p>
-              <p className="text-white text-sm flex items-center gap-1.5">
-                <CountryFlag countryCode={profile.iracingCountryCode} className="text-sm rounded-sm" />
-                {profile.iracingLocation ?? '—'}
-              </p>
-            </div>
-            <div>
-              <p className="font-heading text-[10px] tracking-[0.2em] uppercase text-white/65">Sports Car iRating</p>
-              <p className="text-white text-sm">{profile.sportsCarIrating ?? '—'}</p>
-            </div>
-            <div>
-              <p className="font-heading text-[10px] tracking-[0.2em] uppercase text-white/65">Safety Rating</p>
-              {profile.sportsCarSafetyRating ? (
-                <span
-                  className="inline-block px-1.5 py-0.5 text-sm font-semibold"
-                  style={licenseClassStyle(profile.sportsCarSafetyRating)}
-                >
-                  {profile.sportsCarSafetyRating}
+      <form onSubmit={handleSubmit} className="flex flex-wrap items-start gap-5">
+        <div className="flex min-w-0 flex-[3_1_520px] flex-col gap-5">
+          <section aria-labelledby="from-ir" className="cut flex flex-col gap-3.5 bg-ds-panel px-6 py-[22px]">
+            <div className="flex items-center gap-3.5">
+              <span
+                aria-hidden="true"
+                className="cut-xs flex h-14 w-14 flex-none items-center justify-center bg-ds-control text-[22px] font-black italic"
+              >
+                {initials(name)}
+              </span>
+              <span className="flex flex-col">
+                <span id="from-ir" className="text-[22px] font-extrabold leading-[1.2]">
+                  {name}
                 </span>
-              ) : (
-                <p className="text-white text-sm">—</p>
-              )}
+                <span className="text-[13px] text-ds-muted">
+                  Portal member{profile.discordUsername ? ` · @${profile.discordUsername} on Discord` : ''}
+                </span>
+              </span>
             </div>
-          </div>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-5">
-        {(
-          [
-            ['displayName', 'Display Name', 'text'],
-            ['country', 'Country', 'text'],
-            ['preferredClasses', 'Preferred Classes (e.g. GT3, GTP)', 'text'],
-          ] as const
-        ).map(([field, label]) => (
-          <label key={field} className="flex flex-col gap-2">
-            <span className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">{label}</span>
-            <input
-              type="text"
-              value={profile[field] ?? ''}
-              onChange={(e) => setProfile({ ...profile, [field]: e.target.value })}
-              className="bg-w2w-black border border-white/15 px-4 py-3 text-white text-sm focus:border-w2w-red focus:outline-none"
+            <AvatarUpload
+              avatarUrl={profile.avatarUrl}
+              displayName={profile.displayName}
+              onUpload={(file) => driversApi.uploadAvatarAsAdmin(profile.id, file).then(setProfile)}
+              onRemove={() => driversApi.removeAvatarAsAdmin(profile.id).then(setProfile)}
             />
-          </label>
-        ))}
+            {profile.iracingCustomerId && (
+              <dl className="cut-sm m-0 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2.5 bg-ds-field px-4 py-3.5">
+                <div className="flex flex-col gap-0.5">
+                  <dt className="text-xs font-semibold text-ds-muted">Location</dt>
+                  <dd className="m-0 font-bold">{profile.iracingLocation ?? '—'}</dd>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <dt className="text-xs font-semibold text-ds-muted">iRating</dt>
+                  <dd className="num m-0 text-[17px]">
+                    {profile.sportsCarIrating !== null ? profile.sportsCarIrating.toLocaleString('en-US') : '—'}
+                  </dd>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <dt className="text-xs font-semibold text-ds-muted">Safety rating</dt>
+                  <dd className="m-0">
+                    {profile.sportsCarSafetyRating ? (
+                      <span
+                        className="slant num inline-block px-3 py-px"
+                        style={licenseClassStyle(profile.sportsCarSafetyRating)}
+                      >
+                        {profile.sportsCarSafetyRating}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </dd>
+                </div>
+              </dl>
+            )}
+            {profile.iracingCustomerId && (
+              <span className="text-xs text-ds-dim">
+                iRacing stats come from their linked account (read-only — only {profile.displayName} can re-link it).
+              </span>
+            )}
+          </section>
 
-        <div className="flex flex-col gap-2">
-          <span className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">Timezone</span>
-          <TimezoneAutocomplete
-            value={profile.timezone}
-            onChange={(timezone) => setProfile({ ...profile, timezone })}
-          />
-        </div>
-
-        <label className="flex flex-col gap-2">
-          <span className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">Bio</span>
-          <textarea
-            rows={4}
-            value={profile.bio ?? ''}
-            onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
-            className="bg-w2w-black border border-white/15 px-4 py-3 text-white text-sm focus:border-w2w-red focus:outline-none resize-none"
-          />
-        </label>
-
-        <div className="flex flex-col gap-3 pt-2 border-t border-white/10">
-          <p className="font-heading text-xs tracking-[0.2em] uppercase text-white/65 pt-3">Race Preferences</p>
-          <label className="flex flex-col gap-2 max-w-[240px]">
-            <span className="text-white/65 text-xs">Max. Successive Stints</span>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={profile.maxSuccessiveStints ?? ''}
-              onChange={(e) =>
-                setProfile({ ...profile, maxSuccessiveStints: e.target.value === '' ? null : Number(e.target.value) })
-              }
-              className="bg-w2w-black border border-white/15 px-4 py-3 text-white text-sm focus:border-w2w-red focus:outline-none"
-            />
-          </label>
-          {(
-            [
-              ['startingDriver', 'Starting Driver'],
-              ['wetDriver', 'Wet Driver'],
-              ['nightDriver', 'Night Driver'],
-            ] as const
-          ).map(([field, label]) => (
-            <label key={field} className="flex items-center gap-2.5 text-white/80 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={profile[field]}
-                onChange={(e) => setProfile({ ...profile, [field]: e.target.checked })}
+          <section aria-labelledby="det" className="cut flex flex-col gap-4 bg-ds-panel px-6 py-[22px]">
+            <h2 id="det" className="h2">
+              Details
+            </h2>
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(220px,100%),1fr))] gap-x-4 gap-y-3.5">
+              <label className="flex flex-col gap-1.5">
+                <span className="lbl">Display name</span>
+                <input
+                  type="text"
+                  value={profile.displayName ?? ''}
+                  onChange={(e) => setProfile({ ...profile, displayName: e.target.value })}
+                  className="input min-h-11 px-3.5"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="lbl">Country</span>
+                <input
+                  type="text"
+                  value={profile.country ?? ''}
+                  onChange={(e) => setProfile({ ...profile, country: e.target.value })}
+                  className="input min-h-11 px-3.5"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="lbl">Preferred classes</span>
+                <input
+                  type="text"
+                  value={profile.preferredClasses ?? ''}
+                  onChange={(e) => setProfile({ ...profile, preferredClasses: e.target.value })}
+                  placeholder="e.g. GT3, GTP"
+                  className="input min-h-11 px-3.5"
+                />
+              </label>
+              <div className="flex flex-col gap-1.5">
+                <span className="lbl">Timezone</span>
+                <TimezoneAutocomplete
+                  value={profile.timezone}
+                  onChange={(timezone) => setProfile({ ...profile, timezone })}
+                />
+              </div>
+            </div>
+            <label className="flex flex-col gap-1.5">
+              <span className="lbl">Bio</span>
+              <textarea
+                rows={3}
+                value={profile.bio ?? ''}
+                onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
+                className="input resize-y px-3.5 py-3"
               />
-              {label}
             </label>
-          ))}
+          </section>
         </div>
 
-        <button
-          type="submit"
-          disabled={saving}
-          className="px-6 py-3 bg-w2w-red hover:bg-w2w-red-bright disabled:opacity-50 text-on-accent font-heading font-bold tracking-wide uppercase text-sm transition-colors clip-corner"
-        >
-          {saving ? 'Saving...' : 'Save Settings'}
-        </button>
+        <aside className="flex min-w-0 flex-[2_1_300px] flex-col gap-5">
+          <section aria-labelledby="rp" className="cut flex flex-col bg-ds-panel px-[22px] pb-[18px] pt-5">
+            <div className="mb-3">
+              <h2 id="rp" className="h2">
+                Race preferences
+              </h2>
+            </div>
+            <SwitchRow
+              label="Starting driver"
+              on={profile.startingDriver}
+              onChange={(on) => setProfile({ ...profile, startingDriver: on })}
+            />
+            <SwitchRow
+              label="Wet driver"
+              on={profile.wetDriver}
+              onChange={(on) => setProfile({ ...profile, wetDriver: on })}
+            />
+            <SwitchRow
+              label="Night driver"
+              on={profile.nightDriver}
+              onChange={(on) => setProfile({ ...profile, nightDriver: on })}
+            />
+            <StintsRow
+              value={profile.maxSuccessiveStints}
+              onChange={(maxSuccessiveStints) => setProfile({ ...profile, maxSuccessiveStints })}
+            />
+          </section>
+          <div className="flex flex-col gap-2">
+            {error && (
+              <p role="alert" className="cut-sm m-0 bg-ds-panel px-4 py-3 text-sm text-ds-danger">
+                {error}
+              </p>
+            )}
+            <button type="submit" disabled={saving} className="btn-primary min-h-[46px]">
+              {saving ? 'Saving...' : 'Save settings'}
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="square"
+                aria-hidden="true"
+              >
+                <path d="M5 12h13M13 6l6 6-6 6" />
+              </svg>
+            </button>
+            <Link to={`/drivers/${profile.id}`} className="btn-secondary min-h-11 justify-center">
+              Cancel
+            </Link>
+          </div>
+        </aside>
       </form>
     </div>
   );

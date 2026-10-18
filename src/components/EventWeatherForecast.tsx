@@ -3,6 +3,7 @@ import WeatherForecastChart from './WeatherForecastChart';
 import { ApiError } from '../lib/api';
 import { iracingSeriesApi } from '../lib/api/iracingSeries';
 import { summarizeRaceWeek, type RaceWeekSummary } from '../lib/iracingWeather';
+import { buildForecastTiles } from '../lib/weatherForecastTiles';
 import type { WeatherForecastPoint } from '../types/iracingWeatherForecast';
 
 /** Weather section for an event linked to an iRacing series-season week (Event.iracingSeasonId /
@@ -29,10 +30,14 @@ export default function EventWeatherForecast({
     setWeekSummary(null);
     setPoints(null);
 
-    void Promise.all([iracingSeriesApi.list(), iracingSeriesApi.getWeatherForecast(seasonId, raceWeekNum)])
-      .then(([seasons, forecast]) => {
+    // Just this one season (name + the week's summary) — not the whole series catalog. A failure
+    // there only drops the label/summary; the forecast itself is what the section is for.
+    void Promise.all([
+      iracingSeriesApi.getById(seasonId).catch(() => null),
+      iracingSeriesApi.getWeatherForecast(seasonId, raceWeekNum),
+    ])
+      .then(([season, forecast]) => {
         if (cancelled) return;
-        const season = seasons.find((s) => s.seasonId === seasonId);
         setSeriesLabel(season ? [season.seriesName, season.seasonName].filter(Boolean).join(' — ') : null);
         const entry = season?.schedule.find((e) => (e as Record<string, unknown>)?.race_week_num === raceWeekNum);
         if (entry) setWeekSummary(summarizeRaceWeek(entry));
@@ -51,21 +56,53 @@ export default function EventWeatherForecast({
     };
   }, [seasonId, raceWeekNum]);
 
-  if (loading) return <p className="text-white/65 text-xs">Loading weather forecast...</p>;
-  if (error) return <p className="text-w2w-red text-xs">{error}</p>;
+  if (loading) return <p className="m-0 text-xs text-ds-muted">Loading weather forecast...</p>;
+  if (error) return <p className="m-0 text-xs text-ds-danger">{error}</p>;
+
+  const tiles = points ? buildForecastTiles(points) : [];
+  const firstSimTime = tiles[0]?.simTime ?? null;
 
   return (
-    <div>
-      {seriesLabel && (
-        <p className="text-white/65 text-xs mb-2">
-          {seriesLabel} · Week {raceWeekNum + 1}
-        </p>
+    <div className="flex flex-col gap-3">
+      {tiles.length > 0 && (
+        <>
+          <ul className="m-0 grid list-none grid-cols-3 gap-1 p-0 text-center min-[420px]:grid-cols-6">
+            {tiles.map((tile, i) => (
+              <li
+                key={i}
+                aria-label={`${tile.hourLabel}: ${tile.temperatureC} degrees, ${tile.rainPercent} percent chance of rain`}
+                className="cut-xs flex flex-col items-center gap-0.5 bg-ds-field pb-2 pt-2.5"
+              >
+                <span aria-hidden="true" className="text-[11px] font-semibold text-ds-dim">
+                  {tile.hourLabel}
+                </span>
+                <span aria-hidden="true" className="num text-lg leading-[1.2]">
+                  {tile.temperatureC}°
+                </span>
+                <span
+                  aria-hidden="true"
+                  className={`text-[11px] font-bold tabular-nums ${
+                    tile.rainPercent >= 30
+                      ? 'text-[#7dd3fc] [:root[data-theme=light]_&]:text-[#0369a1]'
+                      : 'text-ds-muted'
+                  }`}
+                >
+                  {tile.rainPercent}%
+                </span>
+              </li>
+            ))}
+          </ul>
+          <span className="text-xs text-ds-muted">
+            {firstSimTime ? `Sim time from ${firstSimTime} · ` : ''}rain chance under each hour
+          </span>
+        </>
       )}
+      {seriesLabel && <p className="m-0 text-xs text-ds-muted">{seriesLabel}</p>}
       {weekSummary && (
-        <div className="mb-3">
-          <p className="text-white text-sm">{weekSummary.weatherSummary}</p>
+        <div>
+          <p className="m-0 text-sm text-ds-ink">{weekSummary.weatherSummary}</p>
           {weekSummary.weatherDetails.length > 0 && (
-            <p className="text-white/65 text-xs mt-0.5">{weekSummary.weatherDetails.join(' · ')}</p>
+            <p className="m-0 mt-0.5 text-xs text-ds-muted">{weekSummary.weatherDetails.join(' · ')}</p>
           )}
         </div>
       )}

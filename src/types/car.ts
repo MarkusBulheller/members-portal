@@ -4,6 +4,8 @@ export interface Livery {
   imageUrl: string;
   name: string;
   uploadedByUserId: string;
+  /** Uploader's display name, resolved server-side (null if that member no longer exists). */
+  uploadedByName?: string | null;
   createdAt: string;
 }
 
@@ -29,11 +31,20 @@ export interface Car {
    * a full CDN URL already, unlike Livery.imageUrl which needs resolveAssetUrl(). */
   imageUrl: string | null;
   active: boolean;
-  liveries: Livery[];
-  trackSetups: CarTrackSetup[];
+  /** Imported race results that used this car (list + detail payloads). */
+  raceCount?: number;
+  /** List payload (GET /cars): counts instead of the nested arrays. */
+  liveryCount?: number;
+  trackSetupCount?: number;
+  /** Detail payload only (GET /cars/:id) — absent from the list; see CarDetail. */
+  liveries?: Livery[];
+  trackSetups?: CarTrackSetup[];
   createdAt: string;
   updatedAt: string;
 }
+
+/** GET /cars/:id — the car with its liveries and per-track setups. */
+export type CarDetail = Car & { liveries: Livery[]; trackSetups: CarTrackSetup[] };
 
 export interface CreateCarTrackSetupInput {
   trackId: string;

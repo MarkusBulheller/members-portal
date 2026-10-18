@@ -48,6 +48,9 @@ export interface RaceEvent {
   /** iRacing only: the session caps how full the tank can be filled, as a percent of the car's
    * max (decimal column, so a string like "98.00"). Null = no limit. */
   fuelLimitPercent: string | null;
+  /** LMU only: how many individual tyres (not sets) each car may use over the whole race,
+   * including the 4 it starts on. Null = no limit. */
+  tyreLimit: number | null;
   /** Links this event to a specific iRacing series-season week — see EventWeatherForecast, which
    * uses these to fetch and display that week's forecast on the event detail page. Both null
    * unless explicitly linked. */
@@ -56,6 +59,17 @@ export interface RaceEvent {
   createdByUserId: string;
   createdAt: string;
   updatedAt: string;
+  /** The requesting user's own relationship to this event (GET /events list + detail). Optional so
+   * older payloads still type-check; the backend fills it in for every authenticated request. */
+  viewer?: EventViewerStatus;
+}
+
+/** signedUp = has a non-cancelled signup; onTeam = placed on an EventTeam; raced = event COMPLETED
+ * and the user was on a team that raced. */
+export interface EventViewerStatus {
+  signedUp: boolean;
+  onTeam: boolean;
+  raced: boolean;
 }
 
 export interface RaceEventDetail extends RaceEvent {
@@ -76,6 +90,18 @@ export interface UpcomingStintAssignment {
   /** This driver's next stint in the crew's rotation, if one is still ahead of them — null once
    * they have none left, or the team has no committed timeslot to schedule from yet. */
   nextStintStartsAt: string | null;
+  /** Track name of the event, so the dashboard hero can show it. Optional for older payloads. */
+  trackName?: string | null;
+  /** The whole crew's stint rotation (from the saved stint plan, if any) with this driver's stints
+   * flagged — powers the dashboard's "You drive N of M" strip. Empty/absent when no plan exists. */
+  stints?: UpcomingStintSlot[];
+}
+
+export interface UpcomingStintSlot {
+  startsAt: string;
+  endsAt: string;
+  isMine: boolean;
+  driverName: string | null;
 }
 
 export interface CreateEventInput {
@@ -85,7 +111,8 @@ export interface CreateEventInput {
   carClasses: string[];
   startsAt: string;
   endsAt?: string;
-  signupDeadline?: string;
+  /** undefined = leave unchanged (update) / unset (create), null = clear, string = set. */
+  signupDeadline?: string | null;
   raceLengthMinutes: RaceLengthMinutes;
   /** Candidate start times, as local <input type="datetime-local"> strings — converted to ISO
    * right before the API call, same as startsAt/endsAt. */
@@ -93,6 +120,8 @@ export interface CreateEventInput {
   status?: EventStatus;
   sim?: Sim;
   fuelLimitPercent?: number | null;
+  /** LMU only; null clears it. */
+  tyreLimit?: number | null;
   /** undefined = leave unchanged (update) / unset (create), null = clear, number = set. */
   iracingSeasonId?: number | null;
   iracingRaceWeekNum?: number | null;

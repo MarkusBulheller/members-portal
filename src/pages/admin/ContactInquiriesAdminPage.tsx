@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useConfirm } from '../../context/ConfirmContext';
 import { contactInquiriesApi } from '../../lib/api/contactInquiries';
+import { publicSiteHost } from '../../lib/publicSite';
+import { relativeTime } from '../../lib/relativeTime';
 import type { ContactInquiry } from '../../types/contactInquiry';
 
 export default function ContactInquiriesAdminPage() {
   const confirm = useConfirm();
   const [inquiries, setInquiries] = useState<ContactInquiry[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const load = () => void contactInquiriesApi.list().then(setInquiries);
   useEffect(load, []);
@@ -34,74 +38,155 @@ export default function ContactInquiriesAdminPage() {
     }
   }
 
+  const siteHost = publicSiteHost();
   const unreviewedCount = (inquiries ?? []).filter((i) => !i.reviewed).length;
+  const current = inquiries?.find((i) => i.id === selectedId) ?? inquiries?.[0] ?? null;
 
   return (
-    <div>
-      <p className="font-heading text-xs tracking-[0.3em] text-w2w-red uppercase mb-2">Admin</p>
-      <h1 className="font-display font-black text-3xl uppercase text-w2w-white mb-2">Contact Inquiries</h1>
-      <p className="text-white/65 text-sm mb-8">
-        Submissions from the "Join the Grid" form on the public marketing site.
-        {unreviewedCount > 0 && <span className="text-w2w-red"> {unreviewedCount} unreviewed.</span>}
-      </p>
+    <div className="flex flex-col gap-5">
+      <header className="flex flex-col gap-1">
+        <h1 className="m-0 text-[34px] font-extrabold leading-[1.1] text-ds-ink">Contact inquiries</h1>
+        <span className="text-ds-muted">
+          Messages from the contact form{siteHost ? ` on ${siteHost}` : ''} ·{' '}
+          <strong className="font-semibold text-ds-ink">
+            {unreviewedCount} new
+          </strong>
+        </span>
+      </header>
 
       {inquiries === null ? (
-        <p className="text-white/65 text-sm">Loading...</p>
+        <p role="status" className="m-0 text-sm text-ds-muted">Loading...</p>
       ) : inquiries.length === 0 ? (
-        <p className="text-white/65 text-sm">No inquiries yet.</p>
+        <section className="cut bg-ds-panel">
+          <p className="m-0 px-4 py-9 text-center text-ds-muted">No inquiries yet.</p>
+        </section>
       ) : (
-        <div className="space-y-3">
-          {inquiries.map((inquiry) => (
-            <div
-              key={inquiry.id}
-              className={`bg-w2w-charcoal border px-5 py-4 ${inquiry.reviewed ? 'border-white/10 opacity-60' : 'border-w2w-red/30'}`}
-            >
-              <div className="flex items-start justify-between gap-4 flex-wrap">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-heading font-semibold text-white text-sm">{inquiry.name}</p>
-                    <span className="px-2 py-0.5 text-[10px] font-heading uppercase tracking-wide bg-white/5 text-white/65">
-                      {inquiry.interestedIn}
+        <div className="flex flex-wrap items-start gap-5">
+          <section
+            aria-labelledby="iq-list"
+            className="cut flex min-w-0 flex-[2_1_320px] flex-col bg-ds-panel pb-1.5 pt-5"
+          >
+            <h2 id="iq-list" className="h2 px-5 pb-3">Inbox</h2>
+            {inquiries.map((inquiry) => {
+              const selected = current?.id === inquiry.id;
+              return (
+                <button
+                  key={inquiry.id}
+                  type="button"
+                  onClick={() => setSelectedId(inquiry.id)}
+                  aria-pressed={selected}
+                  className={`row-hover box-border flex w-full cursor-pointer items-start gap-3 border-0 border-t border-ds-line px-5 py-3.5 text-left text-ds-ink focus-visible:shadow-[inset_0_0_0_2px_var(--color-ds-ink)] focus-visible:outline-none ${
+                    selected
+                      ? 'bg-ds-raised shadow-[inset_3px_0_0_var(--color-w2w-red)]'
+                      : 'bg-transparent'
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`mt-1.5 h-[9px] w-[9px] flex-none -skew-x-20 ${
+                      inquiry.reviewed ? 'bg-transparent' : 'bg-w2w-red'
+                    }`}
+                  />
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="flex justify-between gap-2">
+                      <span className="font-bold">{inquiry.name}</span>
+                      <span className="whitespace-nowrap text-xs text-ds-dim">
+                        {relativeTime(inquiry.createdAt, { capitalize: true })}
+                      </span>
                     </span>
-                    {!inquiry.reviewed && (
-                      <span className="px-2 py-0.5 text-[10px] font-heading uppercase tracking-wide bg-w2w-red/15 text-w2w-red">
-                        New
+                    <span className="text-xs font-semibold text-w2w-red-ink">{inquiry.interestedIn}</span>
+                    {inquiry.message && (
+                      <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] text-ds-muted">
+                        {inquiry.message}
                       </span>
                     )}
+                  </span>
+                </button>
+              );
+            })}
+          </section>
+
+          {current && (
+            <article
+              aria-labelledby="iq-name"
+              className="cut flex min-w-0 flex-[3_1_440px] flex-col gap-[18px] bg-ds-panel p-6"
+            >
+              <div className="flex flex-wrap justify-between gap-3">
+                <div className="flex flex-col gap-2">
+                  <span className="chip self-start text-w2w-red-ink">{current.interestedIn}</span>
+                  <div className="flex flex-col gap-0.5">
+                    <h2 id="iq-name" className="m-0 text-[28px] font-extrabold leading-[1.15] text-ds-ink">
+                      {current.name}
+                    </h2>
+                    <span
+                      className="text-[13px] text-ds-muted"
+                      title={new Date(current.createdAt).toLocaleString('en-GB', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                        hour12: false,
+                      })}
+                    >
+                      Received {relativeTime(current.createdAt)}
+                    </span>
                   </div>
-                  <p className="text-white/65 text-xs mt-1">
-                    <a href={`mailto:${inquiry.email}`} className="hover:text-white">
-                      {inquiry.email}
-                    </a>
-                    {inquiry.iracingId && <span> · iRacing ID: {inquiry.iracingId}</span>}
-                  </p>
-                  <p className="text-white/40 text-[11px] mt-1">
-                    {new Date(inquiry.createdAt).toLocaleString(undefined, {
-                      dateStyle: 'medium',
-                      timeStyle: 'short',
-                    })}
-                  </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-start gap-2">
                   <button
-                    onClick={() => void handleToggleReviewed(inquiry)}
+                    onClick={() => void handleToggleReviewed(current)}
                     disabled={busy}
-                    className="px-3 py-1.5 border border-white/20 text-white/60 hover:text-white hover:border-white/40 disabled:opacity-50 font-heading text-[11px] uppercase tracking-wide transition-colors"
+                    className="btn-secondary min-h-10 px-4 text-[13px]"
                   >
-                    {inquiry.reviewed ? 'Mark Unreviewed' : 'Mark Reviewed'}
+                    {current.reviewed ? 'Mark as new' : 'Mark reviewed'}
                   </button>
                   <button
-                    onClick={() => void handleDelete(inquiry)}
+                    onClick={() => void handleDelete(current)}
                     disabled={busy}
-                    className="px-3 py-1.5 border border-w2w-red/40 text-w2w-red hover:bg-w2w-red/10 disabled:opacity-50 font-heading text-[11px] uppercase tracking-wide transition-colors"
+                    className="btn-danger min-h-10 px-4 text-[13px]"
                   >
                     Delete
                   </button>
                 </div>
               </div>
-              {inquiry.message && <p className="mt-3 text-white/70 text-sm leading-relaxed max-w-2xl">{inquiry.message}</p>}
-            </div>
-          ))}
+
+              <dl className="m-0 grid grid-cols-[auto_1fr] items-baseline gap-x-[18px] gap-y-2 text-sm">
+                <dt className="lbl">Email</dt>
+                <dd className="m-0">
+                  <a href={`mailto:${current.email}`} className="text-w2w-red-ink no-underline transition-[filter] hover:brightness-125">
+                    {current.email}
+                  </a>
+                </dd>
+                <dt className="lbl">iRacing ID</dt>
+                <dd className="m-0 font-semibold text-ds-ink">{current.iracingId || 'Not given'}</dd>
+              </dl>
+
+              {current.message && (
+                <p className="cut-sm m-0 whitespace-pre-wrap bg-ds-field px-[18px] py-4 leading-[1.6] text-ds-ink-soft">
+                  {current.message}
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-2.5">
+                <a href={`mailto:${current.email}`} className="btn-primary">
+                  Reply by email
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="square"
+                    aria-hidden="true"
+                  >
+                    <path d="M5 12h13M13 6l6 6-6 6" />
+                  </svg>
+                </a>
+                <Link to="/admin/members" className="btn-secondary">
+                  Check members queue
+                </Link>
+              </div>
+            </article>
+          )}
         </div>
       )}
     </div>

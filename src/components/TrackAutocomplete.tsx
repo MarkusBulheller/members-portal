@@ -91,11 +91,11 @@ export default function TrackAutocomplete({
         className="input"
       />
       {open && (
-        <div id={listboxId} role="listbox" className="absolute z-10 mt-1 w-full max-h-64 overflow-y-auto bg-w2w-black border border-white/15">
+        <div id={listboxId} role="listbox" className="cut-sm absolute z-10 mt-1 max-h-64 w-full overflow-y-auto bg-ds-raised py-1 shadow-[inset_0_0_0_1px_var(--color-ds-control)]">
           {tracks === null ? (
-            <p className="px-4 py-2 text-sm text-white/65">Loading tracks...</p>
+            <p className="px-4 py-2 text-sm text-ds-muted">Loading tracks...</p>
           ) : matches.length === 0 ? (
-            <p className="px-4 py-2 text-sm text-white/65">No tracks found.</p>
+            <p className="px-4 py-2 text-sm text-ds-muted">No tracks found.</p>
           ) : (
             matches.map((track, i) => (
               <button
@@ -105,8 +105,8 @@ export default function TrackAutocomplete({
                 aria-selected={i === activeIndex}
                 type="button"
                 onClick={() => pick(track)}
-                className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                  i === activeIndex ? 'bg-white/10 text-white' : 'text-white/80 hover:bg-white/5 hover:text-white'
+                className={`w-full border-0 text-left px-4 py-2 text-sm transition-colors ${
+                  i === activeIndex ? 'bg-ds-control text-ds-ink' : 'bg-transparent text-ds-ink-soft hover:bg-ds-control hover:text-ds-ink'
                 }`}
               >
                 {track.name}

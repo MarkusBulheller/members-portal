@@ -4,7 +4,13 @@ import { ApiError } from '../../lib/api';
 import { teamHighlightsApi } from '../../lib/api/teamHighlights';
 import type { CreateTeamHighlightInput, TeamHighlight } from '../../types/teamHighlight';
 
-const EMPTY_FORM: CreateTeamHighlightInput = { period: '', title: '', description: '' };
+const EMPTY_FORM: CreateTeamHighlightInput = { period: '', title: '', description: '', position: null };
+
+const GHOST_BTN =
+  'cut-xs min-h-9 cursor-pointer border-0 bg-transparent px-3 text-[13px] font-bold uppercase transition-colors hover:bg-ds-control-hover disabled:cursor-default disabled:opacity-50';
+
+const MOVE_BTN =
+  'cut-xs flex h-6 w-[30px] cursor-pointer items-center justify-center border-0 bg-ds-control text-ds-muted transition-colors hover:bg-ds-control-hover disabled:cursor-default disabled:opacity-30';
 
 export default function TeamHighlightsAdminPage() {
   const confirm = useConfirm();
@@ -25,7 +31,12 @@ export default function TeamHighlightsAdminPage() {
 
   function startEdit(highlight: TeamHighlight) {
     setEditingId(highlight.id);
-    setForm({ period: highlight.period, title: highlight.title, description: highlight.description });
+    setForm({
+      period: highlight.period,
+      title: highlight.title,
+      description: highlight.description,
+      position: highlight.position ?? null,
+    });
     setError(null);
   }
 
@@ -39,6 +50,10 @@ export default function TeamHighlightsAdminPage() {
     setError(null);
     if (!form.period.trim() || !form.title.trim() || !form.description.trim()) {
       setError('Period, title, and description are all required.');
+      return;
+    }
+    if (form.position != null && (!Number.isInteger(form.position) || form.position < 1 || form.position > 999)) {
+      setError('Position must be a whole number from 1 to 999, or left empty.');
       return;
     }
     setBusy(true);
@@ -79,121 +94,157 @@ export default function TeamHighlightsAdminPage() {
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <p className="font-heading text-xs tracking-[0.3em] text-w2w-red uppercase mb-2">Admin</p>
-          <h1 className="font-display font-black text-3xl uppercase text-w2w-white">Team Highlights</h1>
-          <p className="text-white/65 text-sm mt-2 max-w-lg">
-            Powers the "Team Highlights" timeline on the public marketing site — real team history, in the order
-            shown below.
-          </p>
-        </div>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="max-w-[560px] text-ds-muted">
+          The timeline on the public website and the highlights card on the dashboard. Order here is the order there.
+        </span>
         {editingId === null && (
-          <button
-            onClick={startCreate}
-            className="px-5 py-2.5 bg-w2w-red hover:bg-w2w-red-bright text-on-accent font-heading font-bold tracking-wide uppercase text-xs transition-colors clip-corner shrink-0"
-          >
-            New Highlight
+          <button onClick={startCreate} className="btn-primary">
+            + New highlight
           </button>
         )}
       </div>
 
       {editingId !== null && (
-        <div className="mb-8 bg-w2w-charcoal border border-white/10 p-6 space-y-4 max-w-xl">
-          <h2 className="font-heading text-xs tracking-[0.25em] text-white/65 uppercase">
-            {editingId === 'new' ? 'New Highlight' : 'Edit Highlight'}
+        <section
+          aria-labelledby="highlight-form"
+          className="cut flex flex-col gap-[18px] bg-ds-panel px-6 py-[22px] shadow-[inset_0_3px_0_var(--color-w2w-red)]"
+        >
+          <h2 id="highlight-form" className="h2">
+            {editingId === 'new' ? 'New highlight' : 'Edit highlight'}
           </h2>
 
-          <label className="flex flex-col gap-2">
-            <span className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">
-              Period <span className="text-white/70 normal-case tracking-normal">(e.g. "Season 3 · 2026")</span>
-            </span>
-            <input value={form.period} onChange={(e) => setForm({ ...form, period: e.target.value })} className="input" />
-          </label>
+          <div className="flex flex-wrap gap-x-4 gap-y-3.5">
+            <label className="flex min-w-0 flex-[1_1_240px] flex-col gap-1.5">
+              <span className="lbl">
+                Period <span className="ml-1 font-normal text-ds-dim">(e.g. "Season 3 · 2026")</span>
+              </span>
+              <input value={form.period} onChange={(e) => setForm({ ...form, period: e.target.value })} className="input" />
+            </label>
 
-          <label className="flex flex-col gap-2">
-            <span className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">Title</span>
-            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="input" />
-          </label>
+            <label className="flex min-w-0 flex-[1_1_240px] flex-col gap-1.5">
+              <span className="lbl">Title</span>
+              <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="input" />
+            </label>
 
-          <label className="flex flex-col gap-2">
-            <span className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">Description</span>
-            <textarea
-              rows={3}
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="input resize-none"
-            />
-          </label>
+            <label className="flex min-w-0 flex-[1_1_160px] flex-col gap-1.5">
+              <span className="lbl">
+                Finishing position <span className="ml-1 font-normal text-ds-dim">(optional)</span>
+              </span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={999}
+                step={1}
+                placeholder="e.g. 1"
+                aria-describedby="highlight-position-hint"
+                value={form.position ?? ''}
+                onChange={(e) => setForm({ ...form, position: e.target.value === '' ? null : Number(e.target.value) })}
+                className="input num"
+              />
+              <span id="highlight-position-hint" className="text-xs text-ds-dim">
+                Shown as a P# badge on the dashboard (P1 to P3 get medal colours).
+              </span>
+            </label>
 
-          {error && <p className="text-w2w-red text-sm">{error}</p>}
+            <label className="flex min-w-0 flex-[1_1_100%] flex-col gap-1.5">
+              <span className="lbl">Description</span>
+              <textarea
+                rows={3}
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                className="input resize-none"
+              />
+            </label>
+          </div>
 
-          <div className="flex gap-2">
-            <button
-              onClick={() => void handleSubmit()}
-              disabled={busy}
-              className="px-5 py-2.5 bg-w2w-red hover:bg-w2w-red-bright disabled:opacity-50 text-on-accent font-heading font-bold tracking-wide uppercase text-xs transition-colors clip-corner"
+          {error && (
+            <p
+              role="alert"
+              className="cut-sm m-0 bg-ds-danger/10 px-3.5 py-3 text-[13px] text-ds-danger shadow-[inset_3px_0_0_var(--color-ds-danger)]"
             >
-              {editingId === 'new' ? 'Create' : 'Save Changes'}
-            </button>
-            <button
-              onClick={cancelForm}
-              className="px-5 py-2.5 border border-white/20 text-white/60 hover:text-white font-heading text-xs uppercase tracking-wide transition-colors"
-            >
+              {error}
+            </p>
+          )}
+
+          <div className="flex flex-wrap justify-end gap-2.5 border-t border-ds-line pt-4">
+            <button onClick={cancelForm} className="btn-secondary">
               Cancel
             </button>
+            <button onClick={() => void handleSubmit()} disabled={busy} className="btn-primary">
+              {editingId === 'new' ? 'Create' : 'Save changes'}
+            </button>
           </div>
-        </div>
+        </section>
       )}
 
       {highlights === null ? (
-        <p className="text-white/65 text-sm">Loading...</p>
+        <p role="status" className="m-0 text-sm text-ds-muted">Loading...</p>
       ) : highlights.length === 0 ? (
-        <p className="text-white/65 text-sm">No highlights yet — the public site's timeline will be empty.</p>
+        <section className="cut bg-ds-panel">
+          <p className="m-0 px-4 py-9 text-center text-ds-muted">
+            No highlights yet — the public site's timeline will be empty.
+          </p>
+        </section>
       ) : (
-        <div className="space-y-2">
+        <section aria-label="Highlights" className="cut bg-ds-panel py-1">
           {highlights.map((highlight, index) => (
-            <div key={highlight.id} className="flex items-start justify-between gap-4 bg-w2w-charcoal border border-white/10 p-5">
-              <div className="min-w-0">
-                <span className="font-heading text-xs tracking-[0.2em] text-w2w-red uppercase">{highlight.period}</span>
-                <p className="font-heading font-semibold text-white text-sm mt-1">{highlight.title}</p>
-                <p className="text-white/65 text-xs mt-1 max-w-xl">{highlight.description}</p>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
+            <div
+              key={highlight.id}
+              className={`row-hover flex flex-wrap items-center gap-3.5 px-5 py-3 ${
+                index === 0 ? '' : 'border-t border-ds-line'
+              }`}
+            >
+              <span className="flex flex-col gap-0.5">
                 <button
                   onClick={() => void handleMove(highlight, 'up')}
                   disabled={busy || index === 0}
-                  className="text-white/65 hover:text-white text-sm disabled:opacity-30"
+                  className={MOVE_BTN}
                   aria-label="Move up"
                 >
-                  ↑
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="square" aria-hidden="true">
+                    <path d="M6 15l6-6 6 6" />
+                  </svg>
                 </button>
                 <button
                   onClick={() => void handleMove(highlight, 'down')}
                   disabled={busy || index === highlights.length - 1}
-                  className="text-white/65 hover:text-white text-sm disabled:opacity-30"
+                  className={MOVE_BTN}
                   aria-label="Move down"
                 >
-                  ↓
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="square" aria-hidden="true">
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
                 </button>
-                <button
-                  onClick={() => startEdit(highlight)}
-                  className="ml-2 px-3 py-1.5 border border-white/20 text-white/60 hover:text-white hover:border-white/40 font-heading text-xs uppercase tracking-wide transition-colors"
-                >
+              </span>
+              <span className="num w-[22px] flex-none text-center text-lg text-ds-dim">{index + 1}</span>
+              {highlight.position != null && (
+                <span className="slant num box-border min-w-10 flex-none bg-ds-control px-2 py-0.5 text-center text-sm text-ds-ink-soft">
+                  P{highlight.position}
+                </span>
+              )}
+              <span className="flex min-w-0 flex-[1_1_220px] flex-col">
+                <span className="font-bold text-ds-ink">{highlight.title}</span>
+                <span className="text-[13px] text-ds-muted">{highlight.description}</span>
+              </span>
+              <span className="flex-none text-xs text-ds-dim">{highlight.period}</span>
+              <span className="flex gap-1">
+                <button onClick={() => startEdit(highlight)} className={`${GHOST_BTN} text-ds-ink-soft`}>
                   Edit
                 </button>
                 <button
                   onClick={() => void handleDelete(highlight)}
                   disabled={busy}
-                  className="px-3 py-1.5 border border-w2w-red/40 text-w2w-red hover:bg-w2w-red/10 disabled:opacity-50 font-heading text-xs uppercase tracking-wide transition-colors"
+                  className={`${GHOST_BTN} text-ds-danger`}
                 >
                   Delete
                 </button>
-              </div>
+              </span>
             </div>
           ))}
-        </div>
+        </section>
       )}
     </div>
   );

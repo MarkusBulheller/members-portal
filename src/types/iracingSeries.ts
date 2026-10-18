@@ -8,13 +8,26 @@ export interface IracingSeriesSeason {
   official: boolean;
   active: boolean;
   /** Raw per-race-week entries exactly as iRacing returns them (track + weather per week) —
-   * shape isn't fully pinned down yet, see lib/iracingWeather.ts for defensive rendering. */
-  schedule: unknown[];
+   * shape isn't fully pinned down yet, see lib/iracingWeather.ts for defensive rendering.
+   * Absent from GET /iracing/series (the list is slim); use IracingSeriesSeasonDetail /
+   * iracingSeriesApi.getById() when you need it. */
+  schedule?: unknown[];
   logoUrl: string | null;
   syncedAt: string;
   /** Admin opt-in for the hourly car-usage scan (see IracingCarUsageSyncService on the backend) —
    * most series aren't worth tracking, so this defaults off. */
   trackCarUsage: boolean;
+}
+
+/** GET /iracing/series/:seasonId — one season including its full schedule. */
+export type IracingSeriesSeasonDetail = IracingSeriesSeason & { schedule: unknown[] };
+
+/** GET /iracing/series/:seasonId/car-usage/:raceWeekNum/summary — the total behind a week's tierlist. */
+export interface IracingCarUsageSummary {
+  seasonId: number;
+  raceWeekNum: number;
+  entriesScanned: number;
+  carCount: number;
 }
 
 /** One car's tally for a race week's most-used-cars tierlist — see GET

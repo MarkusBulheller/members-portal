@@ -1,8 +1,34 @@
-import { useEffect, useId, useRef, useState } from 'react';
-import { formatTimezoneLabel } from '../lib/timezone';
+import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { formatTimezoneLabel, getAllTimezones } from '../lib/timezone';
 
-const ALL_TIMEZONES = Intl.supportedValuesOf('timeZone').sort();
 const MAX_RESULTS = 20;
+
+interface ZoneEntry {
+  tz: string;
+  /** Lower-cased "raw name
+readable label" (newline can't be typed, so no cross-field matches),
+   * matched with a single includes(). */
+  haystack: string;
+}
+
+let zoneIndex: ZoneEntry[] | null = null;
+let zoneIndexBuiltAt = 0;
+const ZONE_INDEX_TTL_MS = 60 * 60_000;
+
+/** Built once (lazily, the first time a picker opens) and refreshed hourly so the "(UTC+2)" part
+ * follows DST changes in a long-lived tab. */
+function getZoneIndex(): ZoneEntry[] {
+  const now = Date.now();
+  if (!zoneIndex || now - zoneIndexBuiltAt > ZONE_INDEX_TTL_MS) {
+    zoneIndex = getAllTimezones().map((tz) => ({
+      tz,
+      haystack: `${tz}
+${formatTimezoneLabel(tz) ?? ''}`.toLowerCase(),
+    }));
+    zoneIndexBuiltAt = now;
+  }
+  return zoneIndex;
+}
 
 /** Type-to-filter timezone picker — same pattern as TrackAutocomplete/SeriesAutocomplete, since
  * a plain <select> with 400+ IANA timezones is painful to scroll. Matches against both the raw
@@ -40,10 +66,21 @@ export default function TimezoneAutocomplete({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
-  const q = query.toLowerCase();
-  const matches = ALL_TIMEZONES.filter(
-    (tz) => tz.toLowerCase().includes(q) || (formatTimezoneLabel(tz) ?? '').toLowerCase().includes(q),
-  ).slice(0, MAX_RESULTS);
+  // Matches are only computed while the list is open, against a precomputed haystack, and for a
+  // deferred copy of the query so typing stays responsive.
+  const deferredQuery = useDeferredValue(query);
+  const matches = useMemo(() => {
+    if (!open) return [];
+    const q = deferredQuery.toLowerCase();
+    const out: string[] = [];
+    for (const entry of getZoneIndex()) {
+      if (entry.haystack.includes(q)) {
+        out.push(entry.tz);
+        if (out.length >= MAX_RESULTS) break;
+      }
+    }
+    return out;
+  }, [open, deferredQuery]);
 
   function pick(tz: string) {
     onChange(tz);
@@ -82,8 +119,13 @@ export default function TimezoneAutocomplete({
             setActiveIndex(-1);
           } else if (e.key === 'ArrowDown') {
             e.preventDefault();
-            setOpen(true);
-            setActiveIndex((i) => (matches.length === 0 ? -1 : Math.min(i + 1, matches.length - 1)));
+            if (!open) {
+              // The list isn't computed while closed; open it and highlight the first match.
+              setOpen(true);
+              setActiveIndex(0);
+            } else {
+              setActiveIndex((i) => (matches.length === 0 ? -1 : Math.min(i + 1, matches.length - 1)));
+            }
           } else if (e.key === 'ArrowUp') {
             e.preventDefault();
             setActiveIndex((i) => Math.max(i - 1, 0));
@@ -99,16 +141,16 @@ export default function TimezoneAutocomplete({
         className="input"
       />
       {open && (
-        <div id={listboxId} role="listbox" className="absolute z-10 mt-1 w-full max-h-64 overflow-y-auto bg-w2w-black border border-white/15">
+        <div id={listboxId} role="listbox" className="cut-sm absolute z-10 mt-1 max-h-64 w-full overflow-y-auto bg-ds-raised shadow-[inset_0_0_0_1px_var(--color-ds-control)]">
           <button
             type="button"
             onClick={clear}
-            className="w-full text-left px-4 py-2 text-sm text-white/65 hover:bg-white/5 hover:text-white transition-colors border-b border-white/10"
+            className="w-full border-b border-ds-line bg-transparent px-4 py-2 text-left text-sm text-ds-muted transition-colors hover:bg-ds-control hover:text-ds-ink"
           >
             Not set
           </button>
           {matches.length === 0 ? (
-            <p className="px-4 py-2 text-sm text-white/65">No timezones found.</p>
+            <p className="m-0 px-4 py-2 text-sm text-ds-muted">No timezones found.</p>
           ) : (
             matches.map((tz, i) => (
               <button
@@ -118,8 +160,8 @@ export default function TimezoneAutocomplete({
                 aria-selected={i === activeIndex}
                 type="button"
                 onClick={() => pick(tz)}
-                className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                  i === activeIndex ? 'bg-white/10 text-white' : 'text-white/80 hover:bg-white/5 hover:text-white'
+                className={`w-full border-0 px-4 py-2 text-left text-sm transition-colors ${
+                  i === activeIndex ? 'bg-ds-control text-ds-ink' : 'bg-transparent text-ds-ink-soft hover:bg-ds-control hover:text-ds-ink'
                 }`}
               >
                 {formatTimezoneLabel(tz) ?? tz}

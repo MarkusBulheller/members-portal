@@ -46,14 +46,12 @@ export function stintDurationMs(stint: Stint): number | null {
   return sumMs(stint.laps.map((l) => l.lapTimeMs));
 }
 
-/** Consistency score (0-100, higher = more consistent) for one driver's laps in a race — based
- * on the coefficient of variation (stdev / mean) of their "clean" laps: timed, incident-free, and
- * within 15% of their own median (so pit in/out laps and full-course-yellow laps don't swamp the
- * genuine pace signal). Needs at least 3 clean laps to be meaningful — returns null otherwise
- * (a one-lap relief stint, a DNF before their first timed lap, etc). A CV of 0% (identical laps)
- * maps to 100; a CV of 5% or worse (loose for a full stint once traffic/tire wear are factored
- * in — a tight stint is usually under 1.5%) maps to 0. */
-export function consistencyScore(laps: RaceResultLap[]): number | null {
+/** Lap-time spread (in milliseconds, LOWER = more consistent) for one driver's laps in a race:
+ * the standard deviation of their "clean" laps — timed, incident-free, and within 15% of their
+ * own median (so pit in/out laps and full-course-yellow laps don't swamp the genuine pace
+ * signal). Needs at least 3 clean laps to be meaningful — returns null otherwise (a one-lap
+ * relief stint, a DNF before their first timed lap, etc). Shown in the UI as "± 0.84s". */
+export function lapTimeSpreadMs(laps: RaceResultLap[]): number | null {
   const timed = laps.filter((l): l is RaceResultLap & { lapTimeMs: number } => !l.incident && l.lapTimeMs !== null);
   if (timed.length < 3) return null;
 
@@ -64,9 +62,7 @@ export function consistencyScore(laps: RaceResultLap[]): number | null {
 
   const mean = clean.reduce((sum, t) => sum + t, 0) / clean.length;
   const variance = clean.reduce((sum, t) => sum + (t - mean) ** 2, 0) / clean.length;
-  const coefficientOfVariation = Math.sqrt(variance) / mean;
-
-  return Math.max(0, Math.min(100, Math.round((1 - coefficientOfVariation / 0.05) * 100)));
+  return Math.sqrt(variance);
 }
 
 export function averageLapMs(laps: RaceResultLap[]): number | null {

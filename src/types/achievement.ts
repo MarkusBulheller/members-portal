@@ -44,8 +44,18 @@ export interface AchievementDefinition {
   /** Only set (and only meaningful) when metric is TRACK_WIN. */
   trackId: string | null;
   tiers: AchievementTier[];
+  /** Distinct drivers holding at least one tier. Only present on the definitions list payload. */
+  holderCount?: number;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Result of the admin "Recalculate all" action (POST /achievements/definitions/recalculate-all). */
+export interface RecalculateAllResult {
+  definitionsProcessed: number;
+  newAwards: number;
+  results: Array<{ id: string; name: string; newAwards: number }>;
+  failures: Array<{ id: string; name: string; message: string }>;
 }
 
 export interface AchievementAward {

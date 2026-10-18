@@ -33,7 +33,14 @@ export interface DriverProfile {
   startingDriver: boolean;
   wetDriver: boolean;
   nightDriver: boolean;
-  awards: AchievementAward[];
+  /** Full award list — GET /drivers/:id and the other single-profile endpoints. Absent from the roster
+   * list (GET /drivers), which sends `awardCount` instead. */
+  awards?: AchievementAward[];
+  /** Roster list only: how many awards this driver holds. */
+  awardCount?: number;
+  /** Discord handle of the linked member (no @) — only sent to the profile's owner and admins, and
+   * null for manually added drivers. Absent on list responses. */
+  discordUsername?: string | null;
   createdAt: string;
   updatedAt: string;
 }

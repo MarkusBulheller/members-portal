@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { applyAccent, getStoredAccent, type Accent } from '../lib/accent';
 
 interface AccentContextValue {
@@ -11,12 +11,14 @@ const AccentContext = createContext<AccentContextValue | null>(null);
 export function AccentProvider({ children }: { children: ReactNode }) {
   const [accent, setAccentState] = useState<Accent>(getStoredAccent);
 
-  function setAccent(next: Accent) {
-    applyAccent(next);
+  const setAccent = useCallback((next: Accent) => {
+    applyAccent(next, true);
     setAccentState(next);
-  }
+  }, []);
 
-  return <AccentContext.Provider value={{ accent, setAccent }}>{children}</AccentContext.Provider>;
+  const value = useMemo(() => ({ accent, setAccent }), [accent, setAccent]);
+
+  return <AccentContext.Provider value={value}>{children}</AccentContext.Provider>;
 }
 
 export function useAccent(): AccentContextValue {

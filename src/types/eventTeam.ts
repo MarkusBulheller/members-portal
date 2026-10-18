@@ -15,6 +15,8 @@ export interface EventTeam {
    * until filled in on the team's planning page. */
   refuelDurationSeconds: string | null;
   tyreChangeDurationSeconds: string | null;
+  /** LMU only: seconds for a stop that changes just 1-2 tyres; null = the 5 s default applies. */
+  partialTyreChangeSeconds: string | null;
   pitstopDrivethroughSeconds: string | null;
   lapTimeDrySeconds: string | null;
   lapTimeWetSeconds: string | null;
@@ -39,6 +41,7 @@ export interface EventTeam {
 export interface EventTeamSettingsInput {
   refuelDurationSeconds?: number | null;
   tyreChangeDurationSeconds?: number | null;
+  partialTyreChangeSeconds?: number | null;
   pitstopDrivethroughSeconds?: number | null;
   lapTimeDrySeconds?: number | null;
   lapTimeWetSeconds?: number | null;

@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 
 export interface LeaderboardItem {
@@ -7,12 +8,14 @@ export interface LeaderboardItem {
   href?: string;
 }
 
-/** A ranked horizontal bar list — the standard form for a top-N magnitude comparison (per the
- * dataviz skill's form heuristic), used for every "most/least X" panel on the dashboard. One
- * consistent accent color throughout: these bars aren't a set of categories being compared to
- * each other as parts of a whole (like a pie chart), just a single ranked series, so multiple
- * hues would just be noise. */
-export default function StatLeaderboard({
+// Podium medals are the same in both themes (per the design), with dark text on top.
+const MEDALS = ['bg-[#e8c34a] text-[#111113]', 'bg-[#c7cbd1] text-[#111113]', 'bg-[#cd8a4e] text-[#111113]'];
+
+/** A ranked list panel for every "most/least X" board on the dashboard: slanted rank tags (top
+ * three in podium medal colours), name, italic value. On narrow screens each row also gets a thin
+ * magnitude bar under it (as in the mobile design), scaled to the top value; one accent colour
+ * throughout since it's a single ranked series, not categories. */
+function StatLeaderboard({
   title,
   items,
   formatValue,
@@ -23,49 +26,53 @@ export default function StatLeaderboard({
   formatValue: (value: number) => string;
   emptyMessage: string;
 }) {
-  const max = Math.max(...items.map((item) => item.value), 1);
+  const max = useMemo(() => items.reduce((m, item) => Math.max(m, item.value), 1), [items]);
 
   return (
-    <div>
-      <p className="font-heading text-[10px] tracking-[0.2em] text-white/65 uppercase mb-3">{title}</p>
+    <div className="cut bg-ds-panel pt-4 pb-1.5 flex flex-col">
+      <p className="px-4 pb-2.5 text-sm font-bold text-ds-ink">{title}</p>
       {items.length === 0 ? (
-        <p className="text-white/65 text-sm">{emptyMessage}</p>
+        <p className="px-4 pb-3 text-[13px] text-ds-muted">{emptyMessage}</p>
       ) : (
-        <div className="space-y-1.5">
+        <ol className="m-0 flex list-none flex-col p-0">
           {items.map((item, i) => {
             const row = (
-              <div className="flex items-center gap-3">
-                <span className="text-white/65 text-xs w-4 shrink-0 text-right">{i + 1}</span>
-                <span className="text-white/70 text-sm truncate flex-1 min-w-0">{item.name}</span>
-                <div className="flex items-center gap-2 shrink-0 w-28">
-                  <div className="h-1.5 bg-white/5 flex-1 overflow-hidden">
-                    <div
-                      className="h-full bg-w2w-red"
-                      style={{ width: `${(item.value / max) * 100}%` }}
-                    />
-                  </div>
-                  <span className="text-white text-xs font-heading tabular-nums w-12 text-right shrink-0">
-                    {formatValue(item.value)}
+              <>
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className={`slant num box-border min-w-[30px] shrink-0 px-1.5 py-0.5 text-center text-xs ${
+                      MEDALS[i] ?? 'bg-ds-rank text-ds-ink-soft'
+                    }`}
+                  >
+                    {i + 1}
                   </span>
+                  <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                  <span className="num text-[15px]">{formatValue(item.value)}</span>
                 </div>
-              </div>
+                <div className="ml-10 h-1 bg-ds-control sm:hidden" aria-hidden="true">
+                  <div className="h-full bg-w2w-red" style={{ width: `${(item.value / max) * 100}%` }} />
+                </div>
+              </>
             );
-            return item.href ? (
-              <Link
-                key={item.key}
-                to={item.href}
-                className="block -mx-2 px-2 py-1 hover:bg-white/5 transition-colors"
-              >
-                {row}
-              </Link>
-            ) : (
-              <div key={item.key} className="py-1">
-                {row}
-              </div>
+            const rowClass = `flex flex-col gap-1.5 border-t border-ds-line px-4 py-2.5 text-[13px] text-ds-ink sm:py-[7px] ${
+              i === 0 ? 'font-bold' : ''
+            }`;
+            return (
+              <li key={item.key}>
+                {item.href ? (
+                  <Link to={item.href} className={`${rowClass} row-hover`}>
+                    {row}
+                  </Link>
+                ) : (
+                  <div className={rowClass}>{row}</div>
+                )}
+              </li>
             );
           })}
-        </div>
+        </ol>
       )}
     </div>
   );
 }
+
+export default memo(StatLeaderboard);

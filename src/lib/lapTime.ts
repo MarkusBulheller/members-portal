@@ -9,6 +9,13 @@ export function formatLapTime(ms: number | null): string {
   return minutes > 0 ? `${minutes}:${secondsStr}` : secondsStr;
 }
 
+/** Formats a lap-time spread (standard deviation) in milliseconds as "± 0.84s" — two decimals.
+ * Null (too few clean laps) renders as an em dash. */
+export function formatLapSpread(ms: number | null): string {
+  if (ms === null) return '—';
+  return `± ${(ms / 1000).toFixed(2)}s`;
+}
+
 /** Formats a longer wall-clock duration (e.g. a whole race) as "1h 42m" or "38m" — no seconds
  * precision, unlike formatLapTime, since that level of detail isn't useful at race length. */
 export function formatDuration(ms: number | null): string {

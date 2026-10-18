@@ -16,15 +16,26 @@ function StatusRow({
   badLabel: string;
   unknownLabel: string;
 }) {
-  const color = state === true ? 'text-emerald-400' : state === false ? 'text-w2w-red' : 'text-white/40';
-  const dot = state === true ? 'bg-emerald-400' : state === false ? 'bg-w2w-red' : 'bg-white/40';
+  const color = state === true ? 'text-[#4ade80]' : state === false ? 'text-ds-warn' : 'text-ds-dim';
+  const badge =
+    state === true
+      ? 'bg-[rgba(34,197,94,0.15)] text-[#4ade80]'
+      : state === false
+        ? 'bg-ds-warn/15 text-ds-warn'
+        : 'bg-ds-raised text-ds-dim';
+  const mark = state === true ? '✓' : state === false ? '!' : '?';
   const text = state === true ? okLabel : state === false ? badLabel : unknownLabel;
   return (
-    <div className="flex items-center justify-between text-sm py-1.5">
-      <span className="text-white/65">{label}</span>
-      <span className={`flex items-center gap-1.5 font-heading text-xs uppercase tracking-wide ${color}`}>
-        <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />
-        {text}
+    <div className="flex items-center gap-3 border-t border-ds-line px-5 py-3">
+      <span
+        className={`cut-xs flex h-[30px] w-[30px] flex-none items-center justify-center font-extrabold ${badge}`}
+        aria-hidden="true"
+      >
+        {mark}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="font-bold text-ds-ink">{label}</span>
+        <span className={`text-[13px] ${color}`}>{text}</span>
       </span>
     </div>
   );
@@ -81,79 +92,97 @@ export default function DiscordBotSettingsPage() {
   }
 
   if (!settings) {
-    return <p className="text-white/65 text-sm">Loading...</p>;
+    return <p role="status" className="m-0 text-sm text-ds-muted">Loading...</p>;
   }
 
   return (
-    <div className="max-w-xl">
-      <p className="font-heading text-xs tracking-[0.3em] text-w2w-red uppercase mb-2">Admin</p>
-      <h1 className="font-display font-black text-3xl uppercase text-w2w-white mb-2">Discord Bot</h1>
-      <p className="text-white/65 text-sm mb-8">
-        Controls the bot that posts an announcement to Discord whenever an event is published.
-      </p>
+    <div className="flex flex-wrap items-start gap-5">
+      <section
+        aria-labelledby="bot-cfg"
+        className="cut flex min-w-0 flex-[3_1_420px] flex-col gap-[18px] bg-ds-panel px-6 py-[22px]"
+      >
+        <div className="flex flex-col gap-1">
+          <h2 id="bot-cfg" className="h2">Discord bot</h2>
+          <span className="text-[13px] text-ds-muted">
+            Posts an announcement to Discord whenever an event is published.
+          </span>
+        </div>
 
-      <div className="bg-w2w-charcoal border border-white/10 p-6 space-y-5">
-        <label className="flex flex-col gap-2">
-          <span className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">Bot Token</span>
+        <label className="flex flex-col gap-1.5">
+          <span className="lbl">Bot token</span>
           <input
             type="password"
             value={botToken}
             onChange={(e) => setBotToken(e.target.value)}
-            placeholder={settings.hasToken ? 'Set — leave blank to keep it' : 'Not set'}
+            placeholder={settings.hasToken ? '••••••••••••••••••••' : 'Not set'}
             autoComplete="new-password"
             className="input"
           />
-          <span className="block text-white/70 text-[11px]">
-            From the Discord Developer Portal → your app → Bot → Reset Token. Never shown again once saved —
-            leave this blank to keep the current one.
+          <span className="text-xs text-ds-dim">
+            {settings.hasToken
+              ? 'A token is saved. Paste a new one to replace it.'
+              : 'From the Discord Developer Portal → your app → Bot → Reset Token.'}
           </span>
         </label>
 
-        <label className="flex flex-col gap-2">
-          <span className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">Events Channel ID</span>
+        <label className="flex flex-col gap-1.5">
+          <span className="lbl">Events channel ID</span>
           <input
             type="text"
             value={eventsChannelId}
             onChange={(e) => setEventsChannelId(e.target.value)}
             placeholder="e.g. 1135558244635516998"
-            className="input"
+            className="input tabular-nums"
           />
-          <span className="block text-white/70 text-[11px]">
-            Right-click the channel in Discord (Developer Mode must be on) → Copy Channel ID. The bot must
-            already have Send Messages permission there.
+          <span className="text-xs text-ds-dim">
+            Right-click the channel in Discord (Developer Mode must be on) → Copy Channel ID. The bot must already
+            have Send Messages permission there.
           </span>
         </label>
 
-        {error && <p className="text-w2w-red text-sm">{error}</p>}
-        {saved && !error && <p className="text-emerald-400 text-sm">Saved.</p>}
+        {error && (
+          <p
+            role="alert"
+            className="cut-sm m-0 bg-ds-danger/10 px-3.5 py-3 text-[13px] text-ds-danger shadow-[inset_3px_0_0_var(--color-ds-danger)]"
+          >
+            {error}
+          </p>
+        )}
+        {saved && !error && (
+          <p role="status" className="m-0 text-sm text-[#4ade80]">
+            Saved.
+          </p>
+        )}
 
         <button
           type="button"
           onClick={() => void handleSave()}
           disabled={busy}
-          className="px-5 py-2.5 bg-w2w-red hover:bg-w2w-red-bright disabled:opacity-50 text-on-accent font-heading font-bold tracking-wide uppercase text-xs transition-colors clip-corner"
+          className="btn-primary self-start"
         >
           {busy ? 'Saving...' : 'Save'}
         </button>
-      </div>
+      </section>
 
-      <div className="mt-6 bg-w2w-charcoal border border-white/10 p-6">
-        <div className="flex items-center justify-between mb-1">
-          <p className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">Live Status</p>
-          <button
-            type="button"
-            onClick={loadStatus}
-            disabled={statusLoading}
-            className="text-white/50 hover:text-white text-[11px] font-heading uppercase tracking-wide disabled:opacity-40"
-          >
+      <section
+        aria-labelledby="bot-status"
+        className="cut flex min-w-0 flex-[2_1_300px] flex-col bg-ds-panel pb-1.5 pt-5"
+      >
+        <div className="flex items-center justify-between gap-3 px-5 pb-3">
+          <h2 id="bot-status" className="h2">Live status</h2>
+          <button type="button" onClick={loadStatus} disabled={statusLoading} className="btn-secondary btn-sm cut-xs !text-[13px]">
             {statusLoading ? 'Checking...' : 'Recheck'}
           </button>
         </div>
 
-        {statusError && <p className="text-w2w-red text-sm mt-2">{statusError}</p>}
+        {statusError && (
+          <p role="alert" className="m-0 border-t border-ds-line px-5 py-3 text-[13px] text-ds-danger">
+            {statusError}
+          </p>
+        )}
 
         {status && (
-          <div className="mt-2 divide-y divide-white/5">
+          <>
             <StatusRow
               label="Bot token"
               state={status.tokenValid}
@@ -162,9 +191,9 @@ export default function DiscordBotSettingsPage() {
               unknownLabel="Unknown"
             />
             <StatusRow
-              label="In the team's server"
+              label="In the team server"
               state={status.inGuild}
-              okLabel="Yes"
+              okLabel="Joined"
               badLabel="No"
               unknownLabel={status.guildConfigured ? 'Unknown' : 'Server not configured'}
             />
@@ -175,11 +204,13 @@ export default function DiscordBotSettingsPage() {
               badLabel={status.missingPermissions.length > 0 ? `Missing: ${status.missingPermissions.join(', ')}` : 'Missing permissions'}
               unknownLabel={status.channelConfigured ? 'Unknown' : 'Channel not set'}
             />
-          </div>
+          </>
         )}
 
-        {status?.error && <p className="text-amber-400 text-xs mt-3">{status.error}</p>}
-      </div>
+        {status?.error && (
+          <p className="m-0 border-t border-ds-line px-5 py-3 text-xs text-ds-warn">{status.error}</p>
+        )}
+      </section>
     </div>
   );
 }

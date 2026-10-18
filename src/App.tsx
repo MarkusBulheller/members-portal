@@ -1,50 +1,55 @@
-import { Navigate, Route, BrowserRouter, Routes } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { Navigate, Route, BrowserRouter, Routes, useLocation } from 'react-router-dom';
+import ChunkErrorBoundary from './components/ChunkErrorBoundary';
+import RouteFallback from './components/RouteFallback';
 import { AccentProvider } from './context/AccentContext';
 import { AuthProvider } from './context/AuthContext';
 import { ConfirmProvider } from './context/ConfirmContext';
 import { ThemeProvider } from './context/ThemeContext';
 import DashboardShell from './layouts/DashboardShell';
-import LoginPage from './pages/auth/LoginPage';
-import NotInServerPage from './pages/auth/NotInServerPage';
-import PendingApprovalPage from './pages/auth/PendingApprovalPage';
-import ContactInquiriesAdminPage from './pages/admin/ContactInquiriesAdminPage';
-import MembersQueuePage from './pages/admin/MembersQueuePage';
-import SettingsAdminPage from './pages/admin/SettingsAdminPage';
-import CarDetailPage from './pages/cars/CarDetailPage';
-import CarFormPage from './pages/cars/CarFormPage';
-import CarsListPage from './pages/cars/CarsListPage';
-import DashboardPage from './pages/dashboard/DashboardPage';
-import AdminEditMemberSettingsPage from './pages/drivers/AdminEditMemberSettingsPage';
-import DriverDetailPage from './pages/drivers/DriverDetailPage';
-import DriverFormPage from './pages/drivers/DriverFormPage';
-import DriversListPage from './pages/drivers/DriversListPage';
-import EditMyProfilePage from './pages/drivers/EditMyProfilePage';
-import EventDetailPage from './pages/events/EventDetailPage';
-import EventFormPage from './pages/events/EventFormPage';
-import EventsListPage from './pages/events/EventsListPage';
-import EventTeamBuildingPage from './pages/events/EventTeamBuildingPage';
-import EventTeamPlanPage from './pages/events/EventTeamPlanPage';
-import IracingOAuthCallbackPage from './pages/iracing/IracingOAuthCallbackPage';
-import RaceResultDetailPage from './pages/results/RaceResultDetailPage';
-import RaceResultFormPage from './pages/results/RaceResultFormPage';
-import RaceResultsListPage from './pages/results/RaceResultsListPage';
-import SharedRaceResultPage from './pages/results/SharedRaceResultPage';
-import SeriesDetailPage from './pages/series/SeriesDetailPage';
-import SeriesListPage from './pages/series/SeriesListPage';
-import TrackDetailPage from './pages/tracks/TrackDetailPage';
-import TrackFormPage from './pages/tracks/TrackFormPage';
-import TracksListPage from './pages/tracks/TracksListPage';
 import RequireAdmin from './routing/RequireAdmin';
 import RequireAuth from './routing/RequireAuth';
 
-function App() {
+// Every page is its own chunk; the shell, providers and route guards stay in the entry chunk.
+const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
+const NotInServerPage = lazy(() => import('./pages/auth/NotInServerPage'));
+const PendingApprovalPage = lazy(() => import('./pages/auth/PendingApprovalPage'));
+const ContactInquiriesAdminPage = lazy(() => import('./pages/admin/ContactInquiriesAdminPage'));
+const MembersQueuePage = lazy(() => import('./pages/admin/MembersQueuePage'));
+const SettingsAdminPage = lazy(() => import('./pages/admin/SettingsAdminPage'));
+const CarDetailPage = lazy(() => import('./pages/cars/CarDetailPage'));
+const CarFormPage = lazy(() => import('./pages/cars/CarFormPage'));
+const CarsListPage = lazy(() => import('./pages/cars/CarsListPage'));
+const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'));
+const AdminEditMemberSettingsPage = lazy(() => import('./pages/drivers/AdminEditMemberSettingsPage'));
+const DriverDetailPage = lazy(() => import('./pages/drivers/DriverDetailPage'));
+const DriverFormPage = lazy(() => import('./pages/drivers/DriverFormPage'));
+const DriversListPage = lazy(() => import('./pages/drivers/DriversListPage'));
+const EditMyProfilePage = lazy(() => import('./pages/drivers/EditMyProfilePage'));
+const EventDetailPage = lazy(() => import('./pages/events/EventDetailPage'));
+const EventFormPage = lazy(() => import('./pages/events/EventFormPage'));
+const EventsListPage = lazy(() => import('./pages/events/EventsListPage'));
+const EventTeamBuildingPage = lazy(() => import('./pages/events/EventTeamBuildingPage'));
+const EventTeamPlanPage = lazy(() => import('./pages/events/EventTeamPlanPage'));
+const IracingOAuthCallbackPage = lazy(() => import('./pages/iracing/IracingOAuthCallbackPage'));
+const RaceResultDetailPage = lazy(() => import('./pages/results/RaceResultDetailPage'));
+const RaceResultFormPage = lazy(() => import('./pages/results/RaceResultFormPage'));
+const RaceResultsListPage = lazy(() => import('./pages/results/RaceResultsListPage'));
+const SharedRaceResultPage = lazy(() => import('./pages/results/SharedRaceResultPage'));
+const SeriesDetailPage = lazy(() => import('./pages/series/SeriesDetailPage'));
+const SeriesListPage = lazy(() => import('./pages/series/SeriesListPage'));
+const TrackDetailPage = lazy(() => import('./pages/tracks/TrackDetailPage'));
+const TrackFormPage = lazy(() => import('./pages/tracks/TrackFormPage'));
+const TracksListPage = lazy(() => import('./pages/tracks/TracksListPage'));
+
+/** Public routes (login, shared results, ...) and the shell's own routes sit under this one
+ * boundary + Suspense; the shell adds a second pair around its <Outlet> so it stays mounted. */
+function AppRoutes() {
+  const { pathname } = useLocation();
   return (
-    <ThemeProvider>
-      <AccentProvider>
-      <BrowserRouter>
-        <AuthProvider>
-          <ConfirmProvider>
-          <Routes>
+    <ChunkErrorBoundary resetKey={pathname} className="min-h-screen">
+      <Suspense fallback={<RouteFallback className="min-h-screen" />}>
+        <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/pending-approval" element={<PendingApprovalPage />} />
           <Route path="/not-in-server" element={<NotInServerPage />} />
@@ -100,10 +105,24 @@ function App() {
 
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-          </ConfirmProvider>
-        </AuthProvider>
-      </BrowserRouter>
+          
+        </Routes>
+      </Suspense>
+    </ChunkErrorBoundary>
+  );
+}
+
+function App() {
+  return (
+    <ThemeProvider>
+      <AccentProvider>
+        <BrowserRouter>
+          <AuthProvider>
+            <ConfirmProvider>
+              <AppRoutes />
+            </ConfirmProvider>
+          </AuthProvider>
+        </BrowserRouter>
       </AccentProvider>
     </ThemeProvider>
   );

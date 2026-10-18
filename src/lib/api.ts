@@ -53,6 +53,12 @@ export const api = {
   upload: <T>(path: string, formData: FormData) => request<T>(path, { method: 'POST', body: formData }),
 };
 
+/** Absolute URL for a backend path — for the few consumers that can't go through `api` (e.g. an
+ * EventSource, which needs a URL rather than a fetch). */
+export function apiUrl(path: string): string {
+  return `${API_URL}${path}`;
+}
+
 export function discordLoginUrl(): string {
   return `${API_URL}/auth/discord`;
 }

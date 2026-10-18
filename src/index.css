@@ -1,20 +1,64 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Orbitron", "Rajdhani", sans-serif;
-  --font-heading: "Rajdhani", sans-serif;
-  --font-body: "Inter", sans-serif;
+  /* One typeface for all text. display/heading are kept as aliases so the existing font-display /
+     font-heading classes keep working; Orbitron is reserved for the W2W wordmark (font-logo). */
+  --font-display: "Inter", system-ui, sans-serif;
+  --font-heading: "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-logo: "Orbitron", "Inter", sans-serif;
 
-  --color-w2w-black: #0a0a0b;
-  --color-w2w-black-soft: #121214;
-  --color-w2w-charcoal: #1a1a1d;
-  --color-w2w-charcoal-light: #232327;
-  /* Brand accent — "w2w-red" is a legacy name (kept so bg-w2w-red/text-w2w-red/etc. across the
-     app don't all need renaming), the actual color is racing blue. */
-  --color-w2w-red: #2e6ff2;
-  --color-w2w-red-bright: #4f8cff;
-  --color-w2w-red-dark: #1a3fa6;
+  /* text-white/N, border-white/N, bg-white/N washes are built on the boards' ink, #f5f5f5, not pure white. */
+  --color-white: #f5f5f5;
+
+  --color-w2w-black: #0b0b0c;
+  --color-w2w-black-soft: #111113;
+  --color-w2w-charcoal: #151517;
+  --color-w2w-charcoal-light: #26262a;
+
+  /* ---- Design tokens (dark) — the canvas's Theme board. Use these via Tailwind: bg-ds-panel,
+     text-ds-muted, etc. The light block further down redefines every one of them. ---- */
+  --color-ds-page: #0b0b0c; /* page background */
+  --color-ds-sidebar: #111113; /* sidebar, tab bar */
+  --color-ds-panel: #151517; /* panels, cards */
+  --color-ds-raised: #1c1c1f; /* row hover, quiet raised buttons */
+  --color-ds-active: #1f1f23; /* active nav item */
+  --color-ds-control: #26262a; /* buttons, selected segments, unfilled bars */
+  --color-ds-control-hover: #2e2e33;
+  --color-ds-field: #0b0b0c; /* inputs, inset tiles on a panel */
+  --color-ds-line: #222226; /* row dividers, tag background */
+  --color-ds-edge: #1f1f23; /* hairline on the sidebar's inner edge / mobile top bar */
+  --color-ds-ink: #f5f5f5; /* primary text */
+  --color-ds-ink-soft: #d4d4d8; /* secondary text, table cells */
+  --color-ds-muted: #a1a1a8; /* sublines, labels */
+  --color-ds-dim: #6e6e76; /* meta, table headers */
+  --color-ds-warn: #f5b041;
+  --color-ds-danger: #ff6b6b;
+  /* Board-specific steps that differ per theme (light values in the block further down). */
+  --color-ds-hover: #1c1c1f; /* nav link hover */
+  --color-ds-tag: #222226; /* sidebar "Members" tag */
+  --color-ds-rank: #26262a; /* non-medal rank tags, selected theme-toggle segment */
+  --color-ds-badge: #2a2a2f; /* quiet count badges, LMU tag */
+  --color-ds-ghost: #8b8b92; /* unassigned stint segments */
+  --color-ds-disabled: #3f3f45; /* disabled pager buttons */
+  /* Brand accent — W2W red is the default. Other accents are opt-in via data-accent="…" below. */
+  --color-w2w-red: #e10600;
+  --color-w2w-red-bright: #ff2a1f;
+  --color-w2w-red-dark: #8a0300;
+  /* Accent used as TEXT or a thin icon stroke (links, active nav icon, eyebrow labels). On the dark
+     theme that's the brighter step; the light override below swaps it for the darker step, since
+     the base accent on a white card falls just short of 4.5:1. Follows data-accent automatically
+     because it only references the accent's own steps. */
+  --color-w2w-red-ink: var(--color-w2w-red-bright);
+  /* Hover for accent-coloured links (the boards' a:hover): lighter on dark, darker on light. */
+  --color-w2w-red-ink-hover: color-mix(in srgb, var(--color-w2w-red-bright), white 25%);
+  /* Accent for chart marks (podium diamonds + legend): the bright step on dark, the base on light. */
+  --color-w2w-red-mark: var(--color-w2w-red-bright);
   --color-w2w-white: #f5f5f5;
+
+  /* De-emphasised marks in charts (e.g. non-podium results) — a neutral that still reads as data
+     against the card, unlike the grid colour. */
+  --color-chart-muted: #6b7280;
 
   /* Always-white text sitting directly on the accent background (buttons, active tab pills) —
      deliberately NOT part of the light/dark swap below, since that background never changes
@@ -24,9 +68,9 @@
   /* Chart chrome (grid lines, axis text/lines) for the hand-rolled SVG and Recharts-based charts
      — referenced via CSS var() in inline styles/SVG attributes rather than Tailwind classes,
      since those charts are built with JS color strings, not className. */
-  --color-chart-grid: rgba(255, 255, 255, 0.08);
-  --color-chart-axis: rgba(255, 255, 255, 0.4);
-  --color-chart-axis-line: rgba(255, 255, 255, 0.15);
+  --color-chart-grid: rgba(255, 255, 255, 0.07);
+  --color-chart-axis: rgba(255, 255, 255, 0.5);
+  --color-chart-axis-line: rgba(255, 255, 255, 0.18);
 
   /* Podium position colors (see lib/podium.ts) — used as TEXT color, unlike the driver/chart
      palettes above which are only ever fills, so these need real per-theme contrast, not just
@@ -38,18 +82,18 @@
   --color-podium-bronze: #cd8a4e;
 }
 
-/* Accent color swatches (see AccentContext + AccentPicker) — "blue" is the default (the base
+/* Accent color swatches (see AccentContext + AccentPicker) — "red" is the default (the base
    @theme values above), these are the opt-in alternatives, activated by data-accent="…" on the
    root element. Bright/dark are lighter/darker steps of the same hue (bright for hover states,
-   dark for the scrollbar thumb's resting color), matching the relationship the default blue
+   dark for the scrollbar thumb's resting color), matching the relationship the default red
    already has between its own three steps. Each base tone was checked to keep --color-on-accent
    white text reasonably legible when used as a button background — "green" here is a darker step
    than a first-instinct emerald for exactly that reason (a lighter green tested under ~2.6:1
    contrast with white text, well short of even the large-text 3:1 floor). */
-:root[data-accent="red"] {
-  --color-w2w-red: #e10600;
-  --color-w2w-red-bright: #ff2a1f;
-  --color-w2w-red-dark: #8a0300;
+:root[data-accent="blue"] {
+  --color-w2w-red: #2e6ff2;
+  --color-w2w-red-bright: #4f8cff;
+  --color-w2w-red-dark: #1a3fa6;
 }
 :root[data-accent="green"] {
   --color-w2w-red: #059669;
@@ -92,21 +136,63 @@
    rather than touching every file that uses them. --color-on-accent is deliberately exempt: the
    ~20 spots where white text sits on a solid bg-w2w-red button use that token instead of
    text-white specifically so this swap can't turn button text unreadable in light mode. */
+/* Light values are the canvas's Theme + MainLight boards' exact hexes. */
 :root[data-theme="light"] {
   color-scheme: light;
-  --color-white: #141414;
-  --color-w2w-black: #f6f6f5;
-  --color-w2w-black-soft: #efeeec;
+  --color-white: #111113; /* text-white/N, border-white/N, bg-white/N become ink washes in light */
+
+  --color-ds-page: #f4f4f5;
+  --color-ds-sidebar: #ffffff;
+  --color-ds-panel: #ffffff;
+  --color-ds-raised: #f4f4f5; /* row hover (MainLight .row:hover) */
+  --color-ds-active: #ececee; /* active nav item */
+  --color-ds-control: #ececee; /* buttons, selected segments, unfilled bars, tags */
+  --color-ds-control-hover: #e4e4e7;
+  --color-ds-field: #f4f4f5;
+  --color-ds-line: #e4e4e7;
+  --color-ds-edge: #e4e4e7;
+  --color-ds-ink: #111113;
+  --color-ds-ink-soft: #3f3f46;
+  --color-ds-muted: #5b5b63;
+  --color-ds-dim: #8b8b93;
+  --color-ds-warn: #9a6400;
+  --color-ds-danger: #c22b2b;
+  --color-ds-hover: #ececee;
+  --color-ds-tag: #ececee;
+  --color-ds-rank: #e4e4e7;
+  --color-ds-badge: #e4e4e7;
+  --color-ds-ghost: #8b8b93;
+  --color-ds-disabled: #c4c4cb;
+
+  /* Legacy names, kept equal to the ds-* step they alias in dark. */
+  --color-w2w-black: #f4f4f5;
+  --color-w2w-black-soft: #ffffff;
   --color-w2w-charcoal: #ffffff;
-  --color-w2w-charcoal-light: #e8e8e6;
-  --color-w2w-white: #141414;
-  --color-chart-grid: rgba(0, 0, 0, 0.08);
-  --color-chart-axis: rgba(0, 0, 0, 0.45);
-  --color-chart-axis-line: rgba(0, 0, 0, 0.15);
+  --color-w2w-charcoal-light: #ececee;
+  --color-w2w-white: #111113;
+
+  --color-chart-grid: rgba(0, 0, 0, 0.07);
+  --color-chart-axis: rgba(0, 0, 0, 0.55);
+  --color-chart-axis-line: rgba(0, 0, 0, 0.18);
+  --color-chart-muted: #9aa0a8;
   --color-podium-gold: #9a7500;
   --color-podium-silver: #6b7280;
   --color-podium-bronze: #a15a24;
+
+  /* Accent as text on white: the boards' darker "ink" step per accent. */
+  --color-w2w-red-ink: #b00500;
+  --color-w2w-red-ink-hover: color-mix(in srgb, #b00500, black 22%);
+  --color-w2w-red-mark: var(--color-w2w-red);
 }
+:root[data-theme="light"][data-accent="blue"] { --color-w2w-red-ink: #1f56d1; --color-w2w-red-ink-hover: color-mix(in srgb, #1f56d1, black 22%); }
+:root[data-theme="light"][data-accent="orange"] { --color-w2w-red-ink: #b4440a; --color-w2w-red-ink-hover: color-mix(in srgb, #b4440a, black 22%); }
+:root[data-theme="light"][data-accent="teal"] { --color-w2w-red-ink: #0e7490; --color-w2w-red-ink-hover: color-mix(in srgb, #0e7490, black 22%); }
+/* Accents the boards don't define: fall back to their dark step. */
+:root[data-theme="light"][data-accent="green"],
+:root[data-theme="light"][data-accent="racing-green"],
+:root[data-theme="light"][data-accent="purple"],
+:root[data-theme="light"][data-accent="pink"] { --color-w2w-red-ink: var(--color-w2w-red-dark); --color-w2w-red-ink-hover: color-mix(in srgb, var(--color-w2w-red-dark), black 22%); }
+:root[data-theme="light"] :focus-visible { outline-color: var(--color-w2w-red-ink); }
 
 html {
   color-scheme: dark;
@@ -119,6 +205,9 @@ body {
   background-color: var(--color-w2w-black);
   color: var(--color-w2w-white);
   font-family: var(--font-body);
+  /* The boards' root text size: anything without an explicit size is 14px / 1.5. */
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 ::selection {
@@ -140,20 +229,105 @@ body {
   background: var(--color-w2w-red);
 }
 
-.clip-corner {
-  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+/* ---- Shapes: the design uses no border-radius anywhere, only clip-path cuts. clip-path also
+   clips borders and outlines, so separate things with background steps / inset lines, and use
+   the inset focus ring below instead of outline. ---- */
+.cut-lg { clip-path: polygon(24px 0, 100% 0, 100% calc(100% - 24px), calc(100% - 24px) 100%, 0 100%, 0 24px); } /* hero panel */
+.cut { clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px); } /* panels, cards */
+.cut-sm { clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px); } /* tiles, inputs, buttons */
+.cut-xs { clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px); } /* avatars, dates, toggles */
+.slant { clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); } /* tags, badges */
+.cut-lg:focus-visible,
+.cut:focus-visible,
+.cut-sm:focus-visible,
+.cut-xs:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--color-ds-ink);
+}
+:focus-visible {
+  outline: 2px solid var(--color-w2w-red-bright);
+  outline-offset: 2px;
 }
 
-.input {
-  width: 100%;
-  background-color: var(--color-w2w-black);
-  border: 1px solid color-mix(in oklab, var(--color-white) 15%, transparent);
-  padding: 0.75rem 1rem;
-  color: var(--color-w2w-white);
-  font-size: 0.875rem;
-  font-family: var(--font-body);
+/* Legacy alias for the old 10px cut on primary buttons — new code uses .btn-primary. */
+.clip-corner { clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px); }
+
+/* Numerals: stats, positions, countdowns, lap times. */
+.num { font-style: italic; font-weight: 900; font-variant-numeric: tabular-nums; }
+
+/* Section heading with the accent slash bar. */
+.h2 { margin: 0; display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 20px; line-height: 1.2; }
+.h2::before { content: ""; flex: none; width: 5px; height: 18px; background: var(--color-w2w-red); transform: skewX(-20deg); }
+
+.row-hover:hover { background: var(--color-ds-raised); }
+
+@layer components {
+  /* ---- Buttons: cut-sm geometry built in. Add .btn-sm for the compact size. ---- */
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    min-height: 44px; padding: 0 22px; border: 0; cursor: pointer; text-decoration: none;
+    font-size: 14px; text-transform: uppercase;
+    clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px);
+  }
+  .btn-primary { background: var(--color-w2w-red); color: var(--color-on-accent); font-weight: 800; }
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.12); }
+  .btn-secondary { background: var(--color-ds-control); color: var(--color-ds-ink); font-weight: 700; }
+  .btn-secondary:hover:not(:disabled) { background: var(--color-ds-control-hover); }
+  .btn-danger { background: var(--color-ds-control); color: var(--color-ds-danger); font-weight: 700; }
+  .btn-danger:hover:not(:disabled) { background: var(--color-ds-control-hover); }
+  .btn-sm { min-height: 36px; padding: 0 14px; font-size: 12px; }
+  .btn-primary:disabled, .btn-secondary:disabled, .btn-danger:disabled { opacity: 0.5; cursor: default; }
+
+  /* ---- Tags (slanted). .chip = neutral; modifiers set the tone. ---- */
+  .chip {
+    display: inline-flex; align-items: center; flex: none; white-space: nowrap;
+    padding: 4px 14px; background: var(--color-ds-line); color: var(--color-ds-muted);
+    font-weight: 800; font-size: 11px; text-transform: uppercase;
+    clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+  }
+  .chip-sm { padding: 3px 12px; font-size: 10px; }
+  .chip-accent { color: var(--color-w2w-red-ink); } /* positive / "you're in" */
+  .chip-solid { background: var(--color-w2w-red); color: var(--color-on-accent); } /* call to action */
+  .chip-draft { /* plain, like the neutral tag in the boards */ }
+  .chip-muted { background: var(--color-ds-raised); color: var(--color-ds-dim); }
+  .chip-warn { background: color-mix(in oklab, var(--color-ds-warn) 14%, transparent); color: var(--color-ds-warn); }
+
+  /* ---- Segmented control: <div class="seg"><button aria-pressed>…. Use .seg-field on a panel. ---- */
+  .seg {
+    display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; background: var(--color-ds-panel);
+    clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+  }
+  .seg-field { background: var(--color-ds-field); }
+  .seg > button, .seg > a {
+    display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border: 0; cursor: pointer;
+    background: transparent; color: var(--color-ds-muted); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .seg > [aria-pressed="true"], .seg > [aria-current="page"] {
+    background: var(--color-ds-control); color: var(--color-ds-ink); box-shadow: inset 0 -2px 0 var(--color-w2w-red);
+  }
+
+  /* ---- Fields: no border, field fill, cut corner, accent underline on focus. ---- */
+  .input, .fld {
+    width: 100%; min-height: 42px; padding: 0 12px; border: 0; box-sizing: border-box;
+    background: var(--color-ds-field); color: var(--color-ds-ink); font-size: 14px; font-family: var(--font-body);
+    clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px);
+  }
+  textarea.input, textarea.fld { padding: 10px 12px; }
+  .input::placeholder, .fld::placeholder { color: var(--color-ds-dim); }
+  .input:focus, .fld:focus { outline: none; box-shadow: inset 0 -2px 0 var(--color-w2w-red); }
+  .input:disabled, .fld:disabled { opacity: 0.6; }
+
+  /* Field label: sentence case, never an uppercase eyebrow. */
+  .lbl { font-size: 13px; font-weight: 600; color: var(--color-ds-muted); }
 }
-.input:focus {
-  outline: none;
-  border-color: var(--color-w2w-red);
-}
+
+/* ---- Light-theme refinements (A1) ----
+   Light tag fill per the Theme board is #ececee, a step off the row-divider colour (#e4e4e7) that
+   dark shares with it. Unlayered so it wins over the @layer components .chip rule; the toned
+   variants keep their own backgrounds. */
+:root[data-theme="light"] .chip:not(.chip-solid):not(.chip-muted):not(.chip-warn) { background: var(--color-ds-control); }
+
+/* Light warn tag: the board's rgba(245,176,65,.2) over the card, not 14% of the (darker) light warn ink. */
+:root[data-theme="light"] .chip-warn { background: rgba(245, 176, 65, 0.2); }

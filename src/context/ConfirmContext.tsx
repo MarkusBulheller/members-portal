@@ -30,6 +30,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
 
   const confirmFn = useCallback<ConfirmFn>((message, options) => {
     return new Promise((resolve) => {
+      // A confirm is already open: settle its promise as "no" rather than leaving it hanging forever.
+      resolveRef.current?.(false);
       resolveRef.current = resolve;
       setPending({
         message,
@@ -52,23 +54,12 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {children}
       {pending && (
         <Modal title={pending.title} onClose={() => respond(false)} initialFocusRef={cancelButtonRef}>
-          <p className="text-white/70 text-sm leading-relaxed">{pending.message}</p>
-          <div className="mt-5 flex justify-end gap-2">
-            <button
-              ref={cancelButtonRef}
-              onClick={() => respond(false)}
-              className="px-4 py-2 border border-white/20 text-white/60 hover:text-white font-heading text-xs uppercase tracking-wide transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-w2w-red"
-            >
+          <p className="text-ds-ink-soft text-sm leading-relaxed">{pending.message}</p>
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <button ref={cancelButtonRef} onClick={() => respond(false)} className="btn-secondary">
               {pending.cancelLabel}
             </button>
-            <button
-              onClick={() => respond(true)}
-              className={
-                pending.danger
-                  ? 'px-4 py-2 bg-w2w-red hover:bg-w2w-red-bright text-on-accent font-heading font-bold tracking-wide uppercase text-xs transition-colors clip-corner focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white'
-                  : 'px-4 py-2 border border-white/20 text-white hover:border-white/40 font-heading text-xs uppercase tracking-wide transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-w2w-red'
-              }
-            >
+            <button onClick={() => respond(true)} className={pending.danger ? 'btn-danger' : 'btn-primary'}>
               {pending.confirmLabel}
             </button>
           </div>

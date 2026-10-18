@@ -3,7 +3,11 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { iracingSeriesApi } from '../../lib/api/iracingSeries';
 import { beginIracingSeriesSync } from '../../lib/iracing';
+import { seriesAbbreviation } from '../../lib/seriesAbbreviation';
 import type { IracingSeriesSeason } from '../../types/iracingSeries';
+
+/** iRacing's license_group (1-5) → the class letter it requires. */
+const LICENSE_GROUP_LETTER: Record<number, string> = { 1: 'Rookie', 2: 'D', 3: 'C', 4: 'B', 5: 'A' };
 
 export default function SeriesListPage() {
   const { user } = useAuth();
@@ -15,9 +19,23 @@ export default function SeriesListPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    void iracingSeriesApi.list().then(setSeries);
+    let cancelled = false;
+    iracingSeriesApi
+      .list()
+      .then((loaded) => {
+        if (cancelled) return;
+        setSeries(loaded);
+        setLoadError(null);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : 'Failed to load series.');
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [justSynced]);
 
   function handleSync() {
@@ -43,108 +61,143 @@ export default function SeriesListPage() {
   });
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <p className="font-heading text-xs tracking-[0.3em] text-w2w-red uppercase mb-2">iRacing</p>
-          <h1 className="font-display font-black text-3xl uppercase text-w2w-white">Series</h1>
+    <div className="flex flex-col gap-5">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h1 className="m-0 text-[34px] font-extrabold leading-[1.1]">Series</h1>
+          <span className="text-ds-muted">
+            Synced from iRacing. Open a series to see its schedule, weather and the cars people actually run.
+          </span>
         </div>
         {user?.role === 'ADMIN' && (
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="px-5 py-2.5 bg-w2w-red hover:bg-w2w-red-bright disabled:opacity-50 text-on-accent font-heading font-bold tracking-wide uppercase text-xs transition-colors clip-corner"
-          >
+          <button type="button" onClick={handleSync} disabled={syncing} className="btn-primary">
             {syncing ? 'Syncing...' : 'Sync'}
           </button>
         )}
-      </div>
+      </header>
 
       {justSynced && (
-        <p className="mb-6 text-sm text-w2w-red bg-w2w-red/10 border border-w2w-red/30 px-4 py-3">
+        <p className="cut-sm m-0 bg-ds-panel px-4 py-3 text-sm text-w2w-red-ink shadow-[inset_3px_0_0_var(--color-w2w-red)]">
           Synced {justSynced} series from iRacing.
         </p>
       )}
       {error && (
-        <p className="mb-6 text-sm text-w2w-red bg-w2w-red/10 border border-w2w-red/30 px-4 py-3">{error}</p>
+        <p className="cut-sm m-0 bg-ds-panel px-4 py-3 text-sm text-ds-danger shadow-[inset_3px_0_0_var(--color-ds-danger)]">
+          {error}
+        </p>
       )}
 
-      {series === null ? (
-        <p className="text-white/65 text-sm">Loading...</p>
+      {series === null && loadError ? (
+        <p role="alert" className="text-sm text-ds-danger">
+          {loadError}
+        </p>
+      ) : series === null ? (
+        <p className="text-ds-muted text-sm">Loading...</p>
       ) : series.length === 0 ? (
-        <p className="text-white/65 text-sm">
+        <p className="text-ds-muted text-sm">
           No series synced yet.
           {user?.role === 'ADMIN' ? ' Click "Sync" to pull the current season from iRacing.' : ''}
         </p>
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-3 mb-6">
-            <input
-              type="text"
-              aria-label="Search series"
-              placeholder="Search series..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="input max-w-sm"
-            />
-            <select
-              aria-label="Filter by category"
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="input w-auto"
-            >
-              <option value="">All Categories</option>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="cut-sm flex h-[42px] max-w-[340px] min-w-0 flex-[1_1_240px] items-center gap-2 bg-ds-panel px-3 text-ds-muted">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="square" aria-hidden="true">
+                <circle cx="11" cy="11" r="6.5" />
+                <path d="M16 16l4.5 4.5" />
+              </svg>
+              <input
+                type="text"
+                aria-label="Search series"
+                placeholder="Search series"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="min-w-0 flex-1 border-0 bg-transparent text-ds-ink outline-none placeholder:text-ds-dim"
+              />
+            </div>
+            <div role="group" aria-label="Category" className="seg">
+              <button type="button" aria-pressed={categoryFilter === ''} onClick={() => setCategoryFilter('')}>
+                All categories
+              </button>
               {categories.map((category) => (
-                <option key={category} value={category}>
+                <button
+                  key={category}
+                  type="button"
+                  aria-pressed={categoryFilter === category}
+                  onClick={() => setCategoryFilter(category)}
+                >
                   {category}
-                </option>
+                </button>
               ))}
-            </select>
+            </div>
             {archivedCount > 0 && (
               <button
                 type="button"
+                role="switch"
+                aria-checked={showArchived}
                 onClick={() => setShowArchived((v) => !v)}
-                aria-pressed={showArchived}
-                className={`px-3 py-2 font-heading text-xs uppercase tracking-wide transition-colors shrink-0 ${
-                  showArchived ? 'bg-w2w-red text-on-accent' : 'bg-w2w-charcoal text-white/65 hover:text-white'
-                }`}
+                className="ml-auto flex min-h-10 cursor-pointer items-center gap-2.5 border-0 bg-transparent px-1 text-[13px] font-semibold text-ds-ink-soft"
               >
-                {showArchived ? 'Hide' : 'Show'} Archived ({archivedCount})
+                <span
+                  className={`relative inline-block h-[22px] w-[42px] flex-none ${showArchived ? 'bg-w2w-red' : 'bg-ds-control-hover'}`}
+                >
+                  <span
+                    className="absolute top-1 h-3.5 w-4 bg-on-accent"
+                    style={{
+                      left: showArchived ? 22 : 4,
+                      clipPath: 'polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%)',
+                    }}
+                  />
+                </span>
+                Show archived seasons
               </button>
             )}
           </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((season) => (
-              <Link
-                key={season.seasonId}
-                to={`/series/${season.seasonId}`}
-                className={`bg-w2w-charcoal border border-white/10 hover:border-w2w-red/50 p-5 transition-colors flex items-center gap-4 ${season.active ? '' : 'opacity-60'}`}
-              >
-                {season.logoUrl ? (
-                  <img
-                    src={season.logoUrl}
-                    alt=""
-                    className="h-12 w-12 object-contain bg-black/30 shrink-0"
-                  />
-                ) : (
-                  <div className="h-12 w-12 bg-black/30 shrink-0" />
-                )}
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-heading font-semibold text-white text-sm truncate">{season.seriesName}</p>
-                    {!season.active && (
-                      <span className="px-1.5 py-0.5 text-[10px] font-heading uppercase tracking-wide bg-white/10 text-white/65 shrink-0">
-                        Archived
+
+          <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr))]">
+            {filtered.map((season) => {
+              const letter = season.licenseGroup !== null ? LICENSE_GROUP_LETTER[season.licenseGroup] : undefined;
+              return (
+                <Link
+                  key={season.seasonId}
+                  to={`/series/${season.seasonId}`}
+                  className={`cut row-hover flex flex-col gap-3.5 bg-ds-panel py-4 pl-4 pr-[18px] pb-[18px] text-ds-ink ${season.active ? '' : 'opacity-60'}`}
+                >
+                  <div className="flex items-center gap-3.5">
+                    <span className="cut-xs flex h-[52px] w-[52px] flex-none items-center justify-center overflow-hidden bg-ds-field">
+                      {season.logoUrl ? (
+                        <img
+                          src={season.logoUrl}
+                          alt=""
+                          width={52}
+                          height={52}
+                          loading="lazy"
+                          decoding="async"
+                          className="h-full w-full object-contain"
+                        />
+                      ) : (
+                        <span aria-hidden="true" className="num text-[15px] text-ds-muted">
+                          {seriesAbbreviation(season.seriesName)}
+                        </span>
+                      )}
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="text-[15px] font-bold">{season.seriesName}</span>
+                      <span className="text-[13px] text-ds-muted">
+                        {season.seasonName}
                       </span>
-                    )}
+                    </span>
                   </div>
-                  {season.category && <p className="text-white/65 text-xs mt-0.5 uppercase">{season.category}</p>}
-                  <p className="text-white/65 text-xs mt-2">
-                    {season.schedule.length} race week{season.schedule.length === 1 ? '' : 's'}
-                  </p>
-                </div>
-              </Link>
-            ))}
+                  <div className="flex flex-wrap gap-1.5">
+                    {season.category && <span className="chip chip-sm">{season.category}</span>}
+                    {letter && <span className="chip chip-sm">{letter === 'Rookie' ? 'Rookie' : `Class ${letter}`}</span>}
+                    {season.official && <span className="chip chip-sm">Official</span>}
+                    {season.trackCarUsage && <span className="chip chip-sm chip-accent">Car usage tracked</span>}
+                    {!season.active && <span className="chip chip-sm chip-muted">Archived</span>}
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </>
       )}

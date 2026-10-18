@@ -11,13 +11,13 @@ import type { DriverProfile } from '../../types/driver';
 import type { Track } from '../../types/track';
 
 const METRIC_LABELS: Record<AchievementMetric, string> = {
-  LAPS: 'Laps Completed',
-  WINS: 'Race Wins',
-  PODIUMS: 'Podium Finishes',
-  DISTINCT_CARS_RACED: 'Different Cars Raced',
-  DISTINCT_CARS_WON: 'Different Cars Won With',
-  TRACK_WIN: 'Won at a Specific Track',
-  MANUAL: 'Manual (no metric)',
+  LAPS: 'Laps completed',
+  WINS: 'Race wins',
+  PODIUMS: 'Podiums',
+  DISTINCT_CARS_RACED: 'Different cars raced',
+  DISTINCT_CARS_WON: 'Different cars won in',
+  TRACK_WIN: 'Win at a specific track',
+  MANUAL: 'Manual (awarded by hand)',
 };
 
 const METRICS: AchievementMetric[] = [
@@ -29,6 +29,9 @@ const METRICS: AchievementMetric[] = [
   'TRACK_WIN',
   'MANUAL',
 ];
+
+const GHOST_BTN =
+  'cut-xs min-h-9 cursor-pointer border-0 bg-transparent px-3 text-[13px] font-bold uppercase transition-colors hover:bg-ds-control-hover disabled:cursor-default disabled:opacity-50';
 
 interface DefinitionFormState {
   name: string;
@@ -61,6 +64,7 @@ export default function AchievementsAdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [recalculatingAll, setRecalculatingAll] = useState(false);
 
   const load = () => void achievementsApi.listDefinitions().then(setDefinitions);
 
@@ -173,6 +177,37 @@ export default function AchievementsAdminPage() {
     }
   }
 
+  async function handleRecalculateAll() {
+    const scannable = (definitions ?? []).filter((d) => d.metric !== 'MANUAL').length;
+    setBusy(true);
+    setRecalculatingAll(true);
+    setError(null);
+    setMessage(
+      `Recalculating ${scannable} achievement${scannable === 1 ? '' : 's'} — this scans every race result and can take a little while...`,
+    );
+    try {
+      const result = await achievementsApi.recalculateAll();
+      const count = `${result.definitionsProcessed} achievement${result.definitionsProcessed === 1 ? '' : 's'}`;
+      setMessage(
+        result.newAwards === 0
+          ? `Recalculated ${count} — no new tiers earned, everyone eligible already has them.`
+          : `Recalculated ${count} — awarded ${result.newAwards} new tier${result.newAwards === 1 ? '' : 's'}.`,
+      );
+      if (result.failures.length > 0) {
+        setError(
+          `Couldn't recalculate ${result.failures.map((f) => f.name).join(', ')} — try those individually.`,
+        );
+      }
+      load();
+    } catch (err) {
+      setMessage(null);
+      setError(err instanceof ApiError ? err.message : 'Failed to recalculate');
+    } finally {
+      setRecalculatingAll(false);
+      setBusy(false);
+    }
+  }
+
   function startAward(definitionId: string, firstTierId: string) {
     setAwardingFor(definitionId);
     setAwardDriverId('');
@@ -202,81 +237,101 @@ export default function AchievementsAdminPage() {
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <p className="font-heading text-xs tracking-[0.3em] text-w2w-red uppercase mb-2">Admin</p>
-          <h1 className="font-display font-black text-3xl uppercase text-w2w-white">Achievements</h1>
-        </div>
-        {editingId === null && (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="max-w-[560px] text-ds-muted">
+          Recalculate scans all race results and awards any tier a driver has crossed. Manual achievements are only
+          ever handed out by hand.
+        </span>
+        <div className="flex flex-wrap gap-2.5">
           <button
-            onClick={startCreate}
-            className="px-5 py-2.5 bg-w2w-red hover:bg-w2w-red-bright text-on-accent font-heading font-bold tracking-wide uppercase text-xs transition-colors clip-corner"
+            onClick={() => void handleRecalculateAll()}
+            disabled={busy || definitions === null}
+            className="btn-secondary"
           >
-            New Achievement
+            {recalculatingAll ? 'Recalculating...' : 'Recalculate'}
           </button>
-        )}
+          {editingId === null && (
+            <button onClick={startCreate} className="btn-primary">
+              + New achievement
+            </button>
+          )}
+        </div>
       </div>
 
-      {message && <p className="mb-4 text-white/65 text-sm">{message}</p>}
+      {message && (
+        <p
+          role="status"
+          className="cut-sm m-0 bg-ds-panel px-3.5 py-3 text-[13px] text-ds-ink-soft shadow-[inset_3px_0_0_var(--color-w2w-red)]"
+        >
+          {message}
+        </p>
+      )}
 
       {editingId !== null && (
-        <div className="mb-8 bg-w2w-charcoal border border-white/10 p-6 space-y-4 max-w-xl">
-          <h2 className="font-heading text-xs tracking-[0.25em] text-white/65 uppercase">
-            {editingId === 'new' ? 'New Achievement' : 'Edit Achievement'}
+        <section
+          aria-labelledby="achievement-form"
+          className="cut flex flex-col gap-[18px] bg-ds-panel px-6 py-[22px] shadow-[inset_0_3px_0_var(--color-w2w-red)]"
+        >
+          <h2 id="achievement-form" className="h2">
+            {editingId === 'new' ? 'New achievement' : 'Edit achievement'}
           </h2>
 
-          <Field label="Name">
-            <input
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="input"
-              placeholder="e.g. Century Club"
-            />
-          </Field>
-
-          <Field label="Description (optional)">
-            <textarea
-              rows={2}
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="input resize-none"
-            />
-          </Field>
-
-          <Field label="Metric">
-            <div className="flex flex-wrap gap-2">
-              {METRICS.map((metric) => (
-                <button
-                  key={metric}
-                  type="button"
-                  onClick={() => setForm({ ...form, metric })}
-                  aria-pressed={form.metric === metric}
-                  className={`px-3 py-1.5 font-heading text-xs uppercase tracking-wide transition-colors ${
-                    form.metric === metric
-                      ? 'bg-w2w-red text-on-accent'
-                      : 'border border-white/20 text-white/60 hover:text-white hover:border-white/40'
-                  }`}
-                >
-                  {METRIC_LABELS[metric]}
-                </button>
-              ))}
-            </div>
-            {form.metric !== 'MANUAL' && (
-              <p className="text-white/65 text-xs mt-1">
-                Recalculate scans race results and auto-awards any tier a driver has crossed.
-              </p>
-            )}
-          </Field>
-
-          {form.metric === 'TRACK_WIN' && (
-            <Field label="Track">
-              <TrackAutocomplete tracks={tracks} value={form.trackId} onChange={(trackId) => setForm({ ...form, trackId })} />
+          <div className="flex flex-wrap gap-x-4 gap-y-3.5">
+            <Field label="Name" className="flex-[1_1_240px]">
+              <input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                className="input"
+                placeholder="e.g. Century Club"
+              />
             </Field>
-          )}
 
-          <Field label="Icon">
-            <div className="flex flex-wrap gap-2">
+            <Field label="Counts" className="flex-[1_1_240px]">
+              <select
+                value={form.metric}
+                onChange={(e) => setForm({ ...form, metric: e.target.value as AchievementMetric })}
+                className="input"
+              >
+                {METRICS.map((metric) => (
+                  <option key={metric} value={metric}>
+                    {METRIC_LABELS[metric]}
+                  </option>
+                ))}
+              </select>
+              {form.metric !== 'MANUAL' && (
+                <span className="text-xs text-ds-dim">
+                  Recalculate scans race results and auto-awards any tier a driver has crossed.
+                </span>
+              )}
+            </Field>
+
+            {form.metric === 'TRACK_WIN' && (
+              <Field label="Track" className="flex-[1_1_100%]">
+                <TrackAutocomplete tracks={tracks} value={form.trackId} onChange={(trackId) => setForm({ ...form, trackId })} />
+              </Field>
+            )}
+
+            <Field
+              label={
+                <>
+                  Description <span className="ml-1 font-normal text-ds-dim">optional</span>
+                </>
+              }
+              className="flex-[1_1_100%]"
+            >
+              <textarea
+                rows={1}
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                className="input resize-none"
+              />
+            </Field>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="lbl">Icon</span>
+            <div className="flex flex-wrap gap-1.5">
               {ACHIEVEMENT_ICON_KEYS.map((icon) => (
                 <button
                   key={icon}
@@ -285,114 +340,152 @@ export default function AchievementsAdminPage() {
                   title={icon}
                   aria-label={icon}
                   aria-pressed={form.icon === icon}
-                  className={`h-10 w-10 flex items-center justify-center transition-colors ${
+                  className={`cut-xs flex h-[42px] w-[42px] cursor-pointer items-center justify-center border-0 transition-colors ${
                     form.icon === icon
                       ? 'bg-w2w-red text-on-accent'
-                      : 'border border-white/20 text-white/60 hover:text-white hover:border-white/40'
+                      : 'bg-ds-field text-ds-muted hover:text-ds-ink'
                   }`}
                 >
                   <AchievementIconView icon={icon} className="h-5 w-5" />
                 </button>
               ))}
             </div>
-          </Field>
+          </div>
 
-          <Field label="Tiers">
-            <div className="space-y-2">
-              {form.tiers.map((tier, i) => (
-                <div key={i} className="flex items-center gap-2">
+          <div className="flex flex-col gap-2">
+            <span className="lbl">Tiers</span>
+            {form.tiers.map((tier, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  value={tier.label}
+                  onChange={(e) => updateTier(i, { label: e.target.value })}
+                  placeholder="Label, e.g. Bronze / 100 Laps"
+                  aria-label="Tier label"
+                  className="input min-w-0 flex-[2_1_160px]"
+                />
+                {form.metric !== 'MANUAL' && (
                   <input
-                    value={tier.label}
-                    onChange={(e) => updateTier(i, { label: e.target.value })}
-                    placeholder="Label, e.g. Bronze / 100 Laps"
-                    className="input flex-1"
+                    type="number"
+                    min={1}
+                    value={tier.threshold ?? ''}
+                    onChange={(e) =>
+                      updateTier(i, { threshold: e.target.value === '' ? undefined : Number(e.target.value) })
+                    }
+                    placeholder="Threshold"
+                    aria-label="Threshold"
+                    className="input num min-w-0 max-w-[140px] flex-[1_1_90px]"
                   />
-                  {form.metric !== 'MANUAL' && (
-                    <input
-                      type="number"
-                      min={1}
-                      value={tier.threshold ?? ''}
-                      onChange={(e) =>
-                        updateTier(i, { threshold: e.target.value === '' ? undefined : Number(e.target.value) })
-                      }
-                      placeholder="Threshold"
-                      className="input w-28"
-                    />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setForm({ ...form, tiers: form.tiers.filter((_, j) => j !== i) })}
-                    disabled={form.tiers.length === 1}
-                    className="shrink-0 px-3 py-2.5 border border-white/15 text-white/65 hover:text-white hover:border-white/30 disabled:opacity-30 disabled:pointer-events-none font-heading text-xs uppercase tracking-wide transition-colors"
+                )}
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, tiers: form.tiers.filter((_, j) => j !== i) })}
+                  disabled={form.tiers.length === 1}
+                  aria-label="Remove tier"
+                  className="cut-xs flex h-10 w-10 flex-none cursor-pointer items-center justify-center border-0 bg-ds-control text-ds-muted transition-colors hover:bg-ds-control-hover disabled:pointer-events-none disabled:opacity-30"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="square"
+                    aria-hidden="true"
                   >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
+              </div>
+            ))}
             <button
               type="button"
               onClick={() => setForm({ ...form, tiers: [...form.tiers, { label: '' }] })}
-              className="mt-1 text-xs text-w2w-red hover:text-w2w-red-bright font-heading uppercase tracking-wide self-start"
+              className="btn-secondary btn-sm cut-sm self-start !min-h-[38px] !px-4 !text-[13px] text-ds-ink-soft"
             >
-              + Add Tier
-            </button>
-          </Field>
-
-          {error && <p className="text-w2w-red text-sm">{error}</p>}
-
-          <div className="flex gap-2">
-            <button
-              onClick={() => void handleSubmit()}
-              disabled={busy}
-              className="px-5 py-2.5 bg-w2w-red hover:bg-w2w-red-bright disabled:opacity-50 text-on-accent font-heading font-bold tracking-wide uppercase text-xs transition-colors clip-corner"
-            >
-              {editingId === 'new' ? 'Create' : 'Save Changes'}
-            </button>
-            <button
-              onClick={cancelForm}
-              className="px-5 py-2.5 border border-white/20 text-white/60 hover:text-white font-heading text-xs uppercase tracking-wide transition-colors"
-            >
-              Cancel
+              + Add tier
             </button>
           </div>
-        </div>
+
+          {error && (
+            <p
+              role="alert"
+              className="cut-sm m-0 bg-ds-danger/10 px-3.5 py-3 text-[13px] text-ds-danger shadow-[inset_3px_0_0_var(--color-ds-danger)]"
+            >
+              {error}
+            </p>
+          )}
+
+          <div className="flex flex-wrap justify-end gap-2.5 border-t border-ds-line pt-4">
+            <button onClick={cancelForm} className="btn-secondary">
+              Cancel
+            </button>
+            <button onClick={() => void handleSubmit()} disabled={busy} className="btn-primary">
+              {editingId === 'new' ? 'Save achievement' : 'Save changes'}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {editingId === null && error && (
+        <p
+          role="alert"
+          className="cut-sm m-0 bg-ds-danger/10 px-3.5 py-3 text-[13px] text-ds-danger shadow-[inset_3px_0_0_var(--color-ds-danger)]"
+        >
+          {error}
+        </p>
       )}
 
       {definitions === null ? (
-        <p className="text-white/65 text-sm">Loading...</p>
+        <p role="status" className="m-0 text-sm text-ds-muted">Loading...</p>
       ) : definitions.length === 0 ? (
-        <p className="text-white/65 text-sm">No achievements set up yet.</p>
+        <section className="cut bg-ds-panel">
+          <p className="m-0 px-4 py-9 text-center text-ds-muted">No achievements set up yet.</p>
+        </section>
       ) : (
-        <div className="space-y-3">
-          {definitions.map((definition) => {
+        <section aria-label="Achievements" className="cut bg-ds-panel py-1">
+          {definitions.map((definition, index) => {
             const tiers = [...definition.tiers].sort((a, b) => a.sortOrder - b.sortOrder);
             return (
-              <div key={definition.id} className="bg-w2w-charcoal border border-white/10 p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="h-9 w-9 shrink-0 flex items-center justify-center bg-w2w-red/15 text-w2w-red">
-                      <AchievementIconView icon={definition.icon} className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="font-heading font-semibold text-white text-sm">{definition.name}</p>
-                      {definition.description && (
-                        <p className="text-white/65 text-xs mt-0.5 max-w-md">{definition.description}</p>
-                      )}
-                      <span className="inline-block mt-2 px-2 py-0.5 text-[11px] font-heading uppercase tracking-wide bg-white/5 text-white/65">
-                        {METRIC_LABELS[definition.metric]}
+              <div key={definition.id} className={`row-hover ${index === 0 ? '' : 'border-t border-ds-line'}`}>
+                <div className="flex flex-wrap items-center gap-3.5 px-5 py-3.5">
+                  <span className="cut-xs flex h-11 w-11 flex-none items-center justify-center bg-ds-field text-w2w-red-ink">
+                    <AchievementIconView icon={definition.icon} className="h-[22px] w-[22px]" />
+                  </span>
+                  <span className="flex min-w-0 flex-[1_1_220px] flex-col gap-1.5">
+                    <span className="font-bold text-ds-ink">
+                      {definition.name}
+                      <span className="ml-1 text-[13px] font-normal text-ds-muted">
+                        · {METRIC_LABELS[definition.metric]}
                         {definition.metric === 'TRACK_WIN' && definition.trackId
                           ? ` · ${trackNames[definition.trackId] ?? 'Unknown track'}`
                           : ''}
                       </span>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
+                    </span>
+                    {definition.description && (
+                      <span className="max-w-md text-[13px] text-ds-muted">{definition.description}</span>
+                    )}
+                    <span className="flex flex-wrap gap-1">
+                      {tiers.map((tier) => (
+                        <span key={tier.id} className="chip chip-sm">
+                          {tier.label}
+                          {tier.threshold !== null ? ` · ${tier.threshold}` : ''}
+                        </span>
+                      ))}
+                    </span>
+                  </span>
+                  {definition.holderCount !== undefined && (
+                    <span className="text-[13px] text-ds-muted">
+                      {definition.holderCount}{' '}
+                      {definition.holderCount === 1 ? 'driver' : 'drivers'}
+                    </span>
+                  )}
+                  <span className="flex flex-wrap gap-1">
                     {definition.metric !== 'MANUAL' && (
                       <button
                         onClick={() => void handleRecalculate(definition.id)}
                         disabled={busy}
-                        className="px-3 py-1.5 border border-white/20 text-white/60 hover:text-white hover:border-white/40 disabled:opacity-50 font-heading text-xs uppercase tracking-wide transition-colors"
+                        className={`${GHOST_BTN} text-ds-ink-soft`}
                       >
                         Recalculate
                       </button>
@@ -400,44 +493,27 @@ export default function AchievementsAdminPage() {
                     <button
                       onClick={() => startAward(definition.id, tiers[0]?.id ?? '')}
                       disabled={tiers.length === 0}
-                      className="px-3 py-1.5 border border-white/20 text-white/60 hover:text-white hover:border-white/40 disabled:opacity-40 font-heading text-xs uppercase tracking-wide transition-colors"
+                      className={`${GHOST_BTN} text-w2w-red-ink`}
                     >
                       Award
                     </button>
-                    <button
-                      onClick={() => startEdit(definition)}
-                      className="px-3 py-1.5 border border-white/20 text-white/60 hover:text-white hover:border-white/40 font-heading text-xs uppercase tracking-wide transition-colors"
-                    >
+                    <button onClick={() => startEdit(definition)} className={`${GHOST_BTN} text-ds-ink-soft`}>
                       Edit
                     </button>
                     <button
                       onClick={() => void handleDelete(definition.id)}
                       disabled={busy}
-                      className="px-3 py-1.5 border border-w2w-red/40 text-w2w-red hover:bg-w2w-red/10 disabled:opacity-50 font-heading text-xs uppercase tracking-wide transition-colors"
+                      className={`${GHOST_BTN} text-ds-danger`}
                     >
                       Delete
                     </button>
-                  </div>
-                </div>
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {tiers.map((tier) => (
-                    <span
-                      key={tier.id}
-                      className="px-2.5 py-1 bg-white/5 text-white/60 text-[11px] font-heading uppercase tracking-wide"
-                    >
-                      {tier.label}
-                      {tier.threshold !== null ? ` (${tier.threshold})` : ''}
-                    </span>
-                  ))}
+                  </span>
                 </div>
 
                 {awardingFor === definition.id && (
-                  <div className="mt-4 pt-4 border-t border-white/10 flex flex-wrap items-end gap-2">
-                    <div className="flex flex-col gap-1">
-                      <label className="font-heading text-[10px] tracking-[0.2em] uppercase text-white/65">
-                        Driver
-                      </label>
+                  <div className="mx-5 flex flex-wrap items-end gap-2.5 border-t border-ds-line pb-4 pt-4">
+                    <label className="flex min-w-[200px] flex-col gap-1.5">
+                      <span className="lbl">Driver</span>
                       <select
                         value={awardDriverId}
                         onChange={(e) => setAwardDriverId(e.target.value)}
@@ -450,9 +526,9 @@ export default function AchievementsAdminPage() {
                           </option>
                         ))}
                       </select>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="font-heading text-[10px] tracking-[0.2em] uppercase text-white/65">Tier</label>
+                    </label>
+                    <label className="flex min-w-[160px] flex-col gap-1.5">
+                      <span className="lbl">Tier</span>
                       <select value={awardTierId} onChange={(e) => setAwardTierId(e.target.value)} className="input">
                         {tiers.map((t) => (
                           <option key={t.id} value={t.id}>
@@ -460,18 +536,15 @@ export default function AchievementsAdminPage() {
                           </option>
                         ))}
                       </select>
-                    </div>
+                    </label>
                     <button
                       onClick={() => void handleAward()}
                       disabled={busy || !awardDriverId}
-                      className="px-4 py-2.5 bg-w2w-red hover:bg-w2w-red-bright disabled:opacity-50 text-on-accent font-heading font-bold tracking-wide uppercase text-xs transition-colors clip-corner"
+                      className="btn-primary"
                     >
                       Award
                     </button>
-                    <button
-                      onClick={() => setAwardingFor(null)}
-                      className="px-4 py-2.5 border border-white/20 text-white/60 hover:text-white font-heading text-xs uppercase tracking-wide transition-colors"
-                    >
+                    <button onClick={() => setAwardingFor(null)} className="btn-secondary">
                       Cancel
                     </button>
                   </div>
@@ -479,16 +552,24 @@ export default function AchievementsAdminPage() {
               </div>
             );
           })}
-        </div>
+        </section>
       )}
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  className = '',
+  children,
+}: {
+  label: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <label className="flex flex-col gap-2">
-      <span className="font-heading text-xs tracking-[0.2em] uppercase text-white/65">{label}</span>
+    <label className={`flex min-w-0 flex-col gap-1.5 ${className}`}>
+      <span className="lbl">{label}</span>
       {children}
     </label>
   );

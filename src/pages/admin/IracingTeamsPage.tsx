@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { iracingTeamsApi } from '../../lib/api/iracingTeams';
 import { beginIracingTeamSync } from '../../lib/iracing';
+import { shortDate } from '../../lib/relativeTime';
 import type { IracingTeam } from '../../types/iracingTeam';
 
 export default function IracingTeamsPage() {
@@ -25,63 +26,73 @@ export default function IracingTeamsPage() {
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <p className="font-heading text-xs tracking-[0.3em] text-w2w-red uppercase mb-2">Admin</p>
-          <h1 className="font-display font-black text-3xl uppercase text-w2w-white">iRacing Teams</h1>
-        </div>
-        <button
-          onClick={handleSync}
-          disabled={syncing}
-          className="px-5 py-2.5 bg-w2w-red hover:bg-w2w-red-bright disabled:opacity-50 text-on-accent font-heading font-bold tracking-wide uppercase text-xs transition-colors clip-corner"
-        >
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="max-w-[560px] text-ds-muted">
+          The iRacing teams you can attach to event crews. Syncing signs you in to iRacing and pulls the teams your
+          account belongs to.
+        </span>
+        <button onClick={handleSync} disabled={syncing} className="btn-primary">
           {syncing ? 'Syncing...' : 'Sync from iRacing'}
         </button>
       </div>
 
       {justSynced && (
-        <p className="mb-6 text-sm text-w2w-red bg-w2w-red/10 border border-w2w-red/30 px-4 py-3">
+        <p
+          role="status"
+          className="cut-sm m-0 bg-ds-panel px-3.5 py-3 text-[13px] text-ds-ink-soft shadow-[inset_3px_0_0_var(--color-w2w-red)]"
+        >
           Synced {justSynced} team{justSynced === '1' ? '' : 's'} from iRacing.
         </p>
       )}
-      {error && <p className="mb-6 text-sm text-w2w-red">{error}</p>}
-
-      <p className="text-white/65 text-xs mb-6 max-w-2xl">
-        Sign in with an iRacing account that belongs to the team(s) you want to import — this pulls
-        every team that account is a member of, along with each one's current roster. Used later by
-        team building to check that assigned drivers are actually on the roster.
-      </p>
+      {error && (
+        <p
+          role="alert"
+          className="cut-sm m-0 bg-ds-danger/10 px-3.5 py-3 text-[13px] text-ds-danger shadow-[inset_3px_0_0_var(--color-ds-danger)]"
+        >
+          {error}
+        </p>
+      )}
 
       {teams === null ? (
-        <p className="text-white/65 text-sm">Loading...</p>
+        <p role="status" className="m-0 text-sm text-ds-muted">Loading...</p>
       ) : teams.length === 0 ? (
-        <p className="text-white/65 text-sm">No teams synced yet. Click "Sync from iRacing" to import.</p>
+        <section className="cut bg-ds-panel">
+          <p className="m-0 px-4 py-9 text-center text-ds-muted">
+            No teams synced yet. Click "Sync from iRacing" to import.
+          </p>
+        </section>
       ) : (
-        <div className="space-y-3">
-          {teams.map((team) => (
-            <div key={team.teamId} className="bg-w2w-charcoal border border-white/10 p-5">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <p className="font-heading font-semibold text-white text-sm">{team.teamName}</p>
-                <span className="text-white/50 text-xs">
-                  {team.rosterCount} on roster · synced {new Date(team.syncedAt).toLocaleDateString()}
+        <section aria-label="iRacing teams" className="cut bg-ds-panel py-1">
+          {teams.map((team, i) => (
+            <div
+              key={team.teamId}
+              className={`row-hover flex flex-wrap items-center gap-3.5 px-5 py-3.5 ${
+                i === 0 ? '' : 'border-t border-ds-line'
+              }`}
+            >
+              <span className="cut-xs flex h-10 w-10 flex-none items-center justify-center bg-ds-control text-[15px] font-black italic text-ds-ink">
+                {team.teamName.charAt(0).toUpperCase()}
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="font-bold text-ds-ink">{team.teamName}</span>
+                <span className="text-[13px] text-ds-muted">
+                  Team ID {team.teamId} · <span className="num">{team.rosterCount}</span> on roster
                 </span>
-              </div>
+              </span>
+              <span className="chip chip-sm">Synced {shortDate(team.syncedAt)}</span>
               {team.members.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2">
+                <span className="flex basis-full flex-wrap gap-1 pl-[54px]">
                   {team.members.map((member) => (
-                    <span
-                      key={member.custId}
-                      className="px-2.5 py-1 bg-white/5 text-white/65 text-[11px] font-heading uppercase tracking-wide"
-                    >
+                    <span key={member.custId} className="chip chip-sm chip-muted">
                       {member.displayName}
                     </span>
                   ))}
-                </div>
+                </span>
               )}
             </div>
           ))}
-        </div>
+        </section>
       )}
     </div>
   );

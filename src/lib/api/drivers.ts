@@ -22,6 +22,10 @@ export const driversApi = {
     return api.upload<DriverProfile>('/drivers/me/avatar', formData);
   },
   removeOwnAvatar: () => api.delete<DriverProfile>('/drivers/me/avatar'),
+  /** Copies the member's Discord avatar into their profile photo. */
+  useDiscordAvatar: () => api.post<DriverProfile>('/drivers/me/avatar/discord'),
+  /** Re-pulls the driver's iRacing stats now (self or admin); resolves with the updated profile. */
+  resyncIracing: (id: string) => api.post<DriverProfile>(`/iracing/drivers/${id}/resync`),
   uploadAvatarAsAdmin: (id: string, file: File) => {
     const formData = new FormData();
     formData.append('file', file);

@@ -3,8 +3,8 @@ import AuthLayout from '../../layouts/AuthLayout';
 import { discordLoginUrl } from '../../lib/api';
 
 const DiscordIcon = () => (
-  <svg viewBox="0 0 20 19" className="h-5 w-5 fill-current">
-    <path d="M16.224 3.768a14.5 14.5 0 0 0-3.67-1.153c-.158.286-.343.67-.47.976a13.5 13.5 0 0 0-4.067 0c-.128-.306-.317-.69-.476-.976A14.4 14.4 0 0 0 3.868 3.77C1.546 7.28.916 10.703 1.231 14.077a14.7 14.7 0 0 0 4.5 2.306q.545-.748.965-1.587a9.5 9.5 0 0 1-1.518-.74q.191-.14.372-.293c2.927 1.369 6.107 1.369 8.999 0q.183.152.372.294-.723.437-1.52.74.418.838.963 1.588a14.6 14.6 0 0 0 4.504-2.308c.37-3.911-.63-7.302-2.644-10.309m-9.13 8.234c-.878 0-1.599-.82-1.599-1.82 0-.998.705-1.82 1.6-1.82.894 0 1.614.82 1.599 1.82.001 1-.705 1.82-1.6 1.82m5.91 0c-.878 0-1.599-.82-1.599-1.82 0-.998.705-1.82 1.6-1.82.893 0 1.614.82 1.599 1.82 0 1-.706 1.82-1.6 1.82" />
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" className="fill-current">
+    <path d="M19.6 5.3A17 17 0 0 0 15.4 4l-.5 1.1a15.7 15.7 0 0 0-4.8 0L9.6 4a17 17 0 0 0-4.2 1.3C2.7 9.3 2 13.2 2.3 17a17 17 0 0 0 5.2 2.6l1.1-1.8a11 11 0 0 1-1.7-.8l.4-.3a12.2 12.2 0 0 0 10.4 0l.4.3-1.7.8 1.1 1.8a17 17 0 0 0 5.2-2.6c.4-4.4-.7-8.3-3.1-11.7zM8.9 14.7c-1 0-1.9-.9-1.9-2s.8-2 1.9-2 1.9.9 1.9 2-.8 2-1.9 2zm6.2 0c-1 0-1.9-.9-1.9-2s.8-2 1.9-2 1.9.9 1.9 2-.8 2-1.9 2z" />
   </svg>
 );
 
@@ -12,32 +12,98 @@ const ERROR_MESSAGES: Record<string, string> = {
   oauth_failed: 'Discord sign-in failed or was cancelled. Please try again.',
 };
 
+const STEPS = [
+  'Join the W2W Racing Discord server',
+  'Sign in here with that account',
+  'A team admin approves you, then you’re in',
+];
+
 export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const error = searchParams.get('error');
 
   return (
-    <AuthLayout>
-      <h1 className="font-display font-black text-2xl uppercase text-center text-w2w-white mb-2">
-        Member Sign-In
-      </h1>
-      <p className="text-center text-white/65 text-sm mb-8">
-        Sign in with the Discord account linked to the team's server.
-      </p>
+    <AuthLayout bare>
+      <div className="flex min-h-screen flex-wrap">
+        <section
+          aria-label="W2W Racing"
+          className="relative box-border flex min-h-[420px] min-w-0 flex-[1_1_520px] flex-col justify-between gap-10 overflow-hidden border-r border-ds-edge bg-ds-sidebar p-[clamp(28px,5vw,64px)] pr-[clamp(150px,15vw,210px)]"
+        >
+          <div
+            aria-hidden="true"
+            className="absolute right-0 top-1/2 h-[280px] w-[clamp(120px,11vw,160px)] -translate-y-1/2"
+            style={{
+              background:
+                'linear-gradient(110deg, transparent 0 28%, var(--color-w2w-red) 28% 40%, transparent 40% 50%, var(--color-w2w-red) 50% 100%)',
+            }}
+          />
+          <span className="relative font-logo text-[28px] font-black tracking-[0.14em] text-ds-ink">
+            W<span className="text-w2w-red">2</span>W
+          </span>
+          <div className="relative flex max-w-[520px] flex-col gap-4">
+            <span className="chip chip-solid self-start py-[3px]">Endurance sportscar racing</span>
+            <h1 className="m-0 text-[clamp(40px,4.6vw,62px)] font-extrabold leading-[0.98] text-ds-ink">
+              Plan the stint.
+              <br />
+              Run the race.
+            </h1>
+            <p className="m-0 max-w-[420px] text-base text-ds-muted">
+              Sign-ups, stint plans, setups and results for the W2W Racing team, in one place.
+            </p>
+          </div>
+          <span className="relative text-xs text-ds-dim">W2W Racing · members only</span>
+        </section>
 
-      {error && (
-        <p className="mb-6 text-sm text-w2w-red bg-w2w-red/10 border border-w2w-red/30 px-4 py-3">
-          {ERROR_MESSAGES[error] ?? 'Something went wrong. Please try again.'}
-        </p>
-      )}
+        <section className="box-border flex min-w-0 flex-[1_1_420px] items-center justify-center p-[clamp(28px,5vw,64px)]">
+          <div className="flex w-full max-w-[380px] flex-col gap-[22px]">
+            <div className="flex flex-col gap-1.5">
+              <h2 className="h2 text-[30px] leading-[1.1]">Member sign-in</h2>
+              <p className="m-0 text-ds-muted">Use the Discord account that’s in the team’s server.</p>
+            </div>
 
-      <a
-        href={discordLoginUrl()}
-        className="flex items-center justify-center gap-3 w-full px-6 py-3.5 bg-[#5865F2] hover:bg-[#4752c4] text-on-accent font-heading font-bold tracking-wide uppercase text-sm transition-colors clip-corner"
-      >
-        <DiscordIcon />
-        Sign in with Discord
-      </a>
+            {error && (
+              <p
+                role="alert"
+                className="cut-sm m-0 flex items-start gap-2.5 bg-ds-danger/10 px-3.5 py-3 text-[13px] text-ds-danger shadow-[inset_3px_0_0_var(--color-ds-danger)]"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="square"
+                  aria-hidden="true"
+                  className="mt-px flex-none"
+                >
+                  <path d="M12 3l9.5 17h-19zM12 10v4M12 17v.5" />
+                </svg>
+                {ERROR_MESSAGES[error] ?? 'Something went wrong. Please try again.'}
+              </p>
+            )}
+
+            <a
+              href={discordLoginUrl()}
+              className="cut-sm flex min-h-[52px] items-center justify-center gap-3 bg-[#5865F2] text-[15px] font-extrabold uppercase text-on-accent no-underline transition-colors hover:bg-[#4752c4]"
+            >
+              <DiscordIcon />
+              Sign in with Discord
+            </a>
+
+            <ol className="m-0 flex list-none flex-col p-0 text-[13px] text-ds-muted">
+              {STEPS.map((step, i) => (
+                <li key={step} className="flex items-center gap-3 border-t border-ds-line py-2.5">
+                  <span className="cut-xs num flex h-[26px] w-[26px] flex-none items-center justify-center bg-ds-panel text-[13px] text-ds-ink">
+                    {i + 1}
+                  </span>
+                  {step}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+      </div>
     </AuthLayout>
   );
 }

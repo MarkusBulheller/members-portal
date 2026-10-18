@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import { formatLapTime } from '../lib/lapTime';
 import type { RaceResultLap } from '../types/raceResult';
 
@@ -48,19 +49,19 @@ function computeBoxStats(custId: number, name: string, times: number[]): DriverB
   };
 }
 
-const LABEL_WIDTH = 130;
-const RIGHT_PADDING = 16;
-const CHART_WIDTH = 640;
-const ROW_HEIGHT = 28;
-const ROW_GAP = 8;
-const AXIS_HEIGHT = 22;
+const LABEL_WIDTH = 166;
+const RIGHT_PADDING = 120;
+const CHART_WIDTH = 1000;
+const ROW_HEIGHT = 24;
+const ROW_GAP = 12;
+const AXIS_HEIGHT = 28;
 const TICK_COUNT = 5;
 
 /** Horizontal box-and-whisker plot comparing every driver's lap time distribution in one shared
  * chart — pace consistency at a glance, not just the single best/average lap already shown in
  * the Drivers table. Hand-rolled SVG (Recharts has no box plot primitive); native <title>
  * elements give hover tooltips without any extra interactivity plumbing. */
-export default function LapTimeBoxPlot({
+function LapTimeBoxPlot({
   laps,
   driverColors,
 }: {
@@ -70,21 +71,22 @@ export default function LapTimeBoxPlot({
    * same page ever collide. */
   driverColors: Map<number, string>;
 }) {
-  const byDriver = new Map<number, { name: string; times: number[] }>();
-  for (const lap of laps) {
-    if (lap.lapTimeMs === null) continue;
-    const entry = byDriver.get(lap.iracingCustId) ?? { name: lap.displayName, times: [] };
-    entry.times.push(lap.lapTimeMs);
-    byDriver.set(lap.iracingCustId, entry);
-  }
+  const drivers = useMemo(() => {
+    const byDriver = new Map<number, { name: string; times: number[] }>();
+    for (const lap of laps) {
+      if (lap.lapTimeMs === null) continue;
+      const entry = byDriver.get(lap.iracingCustId) ?? { name: lap.displayName, times: [] };
+      entry.times.push(lap.lapTimeMs);
+      byDriver.set(lap.iracingCustId, entry);
+    }
+    return Array.from(byDriver.entries())
+      .map(([custId, { name, times }]) => computeBoxStats(custId, name, times))
+      .sort((a, b) => a.median - b.median);
+  }, [laps]);
 
-  if (byDriver.size === 0) {
-    return <p className="text-white/65 text-sm">No lap time data available.</p>;
+  if (drivers.length === 0) {
+    return <p className="text-ds-muted text-sm">No lap time data available.</p>;
   }
-
-  const drivers = Array.from(byDriver.entries())
-    .map(([custId, { name, times }]) => computeBoxStats(custId, name, times))
-    .sort((a, b) => a.median - b.median);
 
   const allTimes = drivers.flatMap((d) => [d.min, d.max]);
   const domainMin = Math.min(...allTimes);
@@ -100,84 +102,100 @@ export default function LapTimeBoxPlot({
   const chartHeight = AXIS_HEIGHT + drivers.length * (ROW_HEIGHT + ROW_GAP);
 
   return (
-    <svg width="100%" viewBox={`0 0 ${CHART_WIDTH} ${chartHeight}`} style={{ overflow: 'visible' }}>
-      {ticks.map((t, i) => (
-        <g key={i}>
-          <line
-            x1={scaleX(t)}
-            x2={scaleX(t)}
-            y1={AXIS_HEIGHT}
-            y2={chartHeight}
-            stroke="var(--color-white)"
-            strokeOpacity={0.06}
-          />
-          <text x={scaleX(t)} y={14} textAnchor="middle" fontSize={10} fill="var(--color-white)" fillOpacity={0.4}>
-            {formatLapTime(t)}
-          </text>
-        </g>
-      ))}
-
-      {drivers.map((driver, i) => {
-        const y = AXIS_HEIGHT + i * (ROW_HEIGHT + ROW_GAP);
-        const midY = y + ROW_HEIGHT / 2;
-        const color = driverColors.get(driver.custId) ?? '#7a8b99';
-        const summary = `${driver.name} — median ${formatLapTime(driver.median)}, IQR ${formatLapTime(driver.q1)}–${formatLapTime(driver.q3)}, range ${formatLapTime(driver.min)}–${formatLapTime(driver.max)}`;
-
-        return (
-          <g key={driver.custId}>
+    <div className="overflow-x-auto">
+      <svg
+        viewBox={`0 0 ${CHART_WIDTH} ${chartHeight}`}
+        role="img"
+        aria-label="Lap time distribution per driver, sorted by median lap"
+        style={{ width: '100%', minWidth: 620, height: 'auto', display: 'block' }}
+      >
+        {ticks.map((t, i) => (
+          <g key={i}>
+            <line x1={scaleX(t)} x2={scaleX(t)} y1={AXIS_HEIGHT} y2={chartHeight} stroke="var(--color-chart-grid)" />
             <text
-              x={LABEL_WIDTH - 10}
-              y={midY}
-              textAnchor="end"
-              dominantBaseline="middle"
+              x={scaleX(t)}
+              y={16}
+              textAnchor="middle"
               fontSize={12}
-              fill="var(--color-white)"
-              fillOpacity={0.7}
+              fontWeight={600}
+              fill="var(--color-chart-axis)"
+              fontFamily="Inter, sans-serif"
             >
-              {driver.name}
+              {formatLapTime(t)}
             </text>
-
-            <line x1={scaleX(driver.min)} x2={scaleX(driver.max)} y1={midY} y2={midY} stroke={color} strokeWidth={1.5} />
-            <line
-              x1={scaleX(driver.min)}
-              x2={scaleX(driver.min)}
-              y1={midY - 6}
-              y2={midY + 6}
-              stroke={color}
-              strokeWidth={1.5}
-            />
-            <line
-              x1={scaleX(driver.max)}
-              x2={scaleX(driver.max)}
-              y1={midY - 6}
-              y2={midY + 6}
-              stroke={color}
-              strokeWidth={1.5}
-            />
-
-            <rect
-              x={scaleX(driver.q1)}
-              width={Math.max(1, scaleX(driver.q3) - scaleX(driver.q1))}
-              y={y + 4}
-              height={ROW_HEIGHT - 8}
-              fill={color}
-              fillOpacity={0.35}
-              stroke={color}
-              strokeWidth={1.5}
-            >
-              <title>{summary}</title>
-            </rect>
-            <line
-              x1={scaleX(driver.median)}
-              x2={scaleX(driver.median)}
-              y1={y + 4}
-              y2={y + ROW_HEIGHT - 4}
-              stroke="#0a0a0b"
-              strokeWidth={2}
-            />
           </g>
-        );
-      })}
-    </svg>
+        ))}
+
+        {drivers.map((driver, i) => {
+          const y = AXIS_HEIGHT + i * (ROW_HEIGHT + ROW_GAP);
+          const midY = y + ROW_HEIGHT / 2;
+          const color = driverColors.get(driver.custId) ?? '#7a8b99';
+          const summary = `${driver.name} — median ${formatLapTime(driver.median)}, IQR ${formatLapTime(driver.q1)}–${formatLapTime(driver.q3)}, range ${formatLapTime(driver.min)}–${formatLapTime(driver.max)}, ${driver.outliers.length} outlier lap${driver.outliers.length === 1 ? '' : 's'}`;
+          const visibleOutliers = driver.outliers.filter((t) => t >= rangeStart && t <= rangeEnd);
+          const offChart = driver.outliers.length - visibleOutliers.length;
+
+          return (
+            <g key={driver.custId}>
+              <title>{summary}</title>
+              <text
+                x={LABEL_WIDTH - 16}
+                y={midY}
+                textAnchor="end"
+                dominantBaseline="middle"
+                fontSize={13}
+                fontWeight={700}
+                fill="var(--color-ds-ink)"
+                fontFamily="Inter, sans-serif"
+              >
+                {driver.name}
+              </text>
+
+              <line x1={scaleX(driver.min)} x2={scaleX(driver.q1)} y1={midY} y2={midY} stroke={color} strokeWidth={2} strokeLinecap="square" />
+              <line x1={scaleX(driver.q3)} x2={scaleX(driver.max)} y1={midY} y2={midY} stroke={color} strokeWidth={2} strokeLinecap="square" />
+              <line x1={scaleX(driver.min)} x2={scaleX(driver.min)} y1={midY - 7} y2={midY + 7} stroke={color} strokeWidth={2} strokeLinecap="square" />
+              <line x1={scaleX(driver.max)} x2={scaleX(driver.max)} y1={midY - 7} y2={midY + 7} stroke={color} strokeWidth={2} strokeLinecap="square" />
+
+              <rect
+                x={scaleX(driver.q1)}
+                width={Math.max(2, scaleX(driver.q3) - scaleX(driver.q1))}
+                y={y}
+                height={ROW_HEIGHT}
+                fill={color}
+                fillOpacity={0.2}
+                stroke={color}
+                strokeWidth={2}
+              />
+              <line
+                x1={scaleX(driver.median)}
+                x2={scaleX(driver.median)}
+                y1={y}
+                y2={y + ROW_HEIGHT}
+                stroke="var(--color-ds-ink)"
+                strokeWidth={3}
+              />
+              {visibleOutliers.map((t, j) => (
+                <rect key={j} x={scaleX(t) - 3.5} y={midY - 3.5} width={7} height={7} fill="none" stroke={color} strokeWidth={1.5} />
+              ))}
+
+              <text
+                x={CHART_WIDTH - 5}
+                y={midY}
+                textAnchor="end"
+                dominantBaseline="middle"
+                fontSize={12}
+                fontWeight={600}
+                fill="color-mix(in srgb, var(--color-ds-ink) 65%, transparent)"
+                fontFamily="Inter, sans-serif"
+              >
+                {formatLapTime(driver.median)}
+                {offChart ? ` · ${offChart} slow` : ''}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
   );
 }
+
+export default memo(LapTimeBoxPlot);

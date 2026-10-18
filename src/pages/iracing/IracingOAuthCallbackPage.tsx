@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import AuthLayout from '../../layouts/AuthLayout';
+import { AuthStatusBody } from '../auth/PendingApprovalPage';
 import {
+  type IracingOAuthPurpose,
   completeIracingCarSync,
   completeIracingLink,
   completeIracingSeriesSync,
@@ -10,10 +12,23 @@ import {
   peekIracingOAuthPurpose,
 } from '../../lib/iracing';
 
+/** Where the "back" action of the failure screen leads: the page the flow was started from. */
+const BACK_TARGETS: Record<IracingOAuthPurpose, { to: string; label: string }> = {
+  'link-profile': { to: '/drivers/me/edit', label: 'Back to my profile' },
+  'sync-cars': { to: '/cars/new', label: 'Back to cars' },
+  'sync-tracks': { to: '/tracks/new', label: 'Back to tracks' },
+  'sync-series': { to: '/series', label: 'Back to series' },
+  'sync-team': { to: '/admin/iracing-teams', label: 'Back to iRacing teams' },
+};
+
 export default function IracingOAuthCallbackPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
+  // Captured once up front: the complete* helpers below clear the stored purpose as they run, but
+  // the failure screen still needs it to know where "back" should go.
+  const [startedPurpose] = useState<IracingOAuthPurpose>(() => peekIracingOAuthPurpose() ?? 'link-profile');
+  const isLink = startedPurpose === 'link-profile';
   const ran = useRef(false);
 
   useEffect(() => {
@@ -78,30 +93,43 @@ export default function IracingOAuthCallbackPage() {
   }, [searchParams, navigate]);
 
   if (error) {
+    const back = BACK_TARGETS[startedPurpose];
     return (
       <AuthLayout>
-        <h1 className="font-display font-black text-2xl uppercase text-center text-w2w-white mb-3">
-          Failed
-        </h1>
-        <p className="text-center text-white/65 text-sm leading-relaxed mb-6">{error}</p>
-        <button
-          onClick={() => navigate('/dashboard')}
-          className="block mx-auto text-xs text-w2w-red hover:text-w2w-red-bright"
+        <AuthStatusBody
+          live="alert"
+          icon="alert"
+          tone="amber"
+          tag="iRacing"
+          title={isLink ? 'Couldn’t link iRacing' : 'Couldn’t sync iRacing'}
+          body={
+            isLink
+              ? 'iRacing didn’t confirm the sign-in. Nothing changed on your profile. Try again from your profile page.'
+              : 'iRacing didn’t confirm the sign-in, so nothing was synced. Try again from the page you started on.'
+          }
         >
-          ← Back to dashboard
-        </button>
+          <p className="m-0 text-[13px] text-ds-dim">{error}</p>
+          <Link to={back.to} replace className="btn-primary box-border min-h-12 w-full">
+            {back.label}
+          </Link>
+          <Link to="/dashboard" className="text-[13px] font-semibold text-w2w-red-ink no-underline hover:underline">
+            Go to dashboard
+          </Link>
+        </AuthStatusBody>
       </AuthLayout>
     );
   }
 
   return (
     <AuthLayout>
-      <h1 className="font-display font-black text-2xl uppercase text-center text-w2w-white mb-3">
-        Signing In
-      </h1>
-      <p role="status" className="text-center text-white/65 text-sm">
-        Talking to iRacing...
-      </p>
+      <AuthStatusBody
+        live="status"
+        spinning
+        tone="neutral"
+        tag="iRacing"
+        title={isLink ? 'Linking your account' : 'Syncing from iRacing'}
+        body="Talking to iRacing. This only takes a moment."
+      />
     </AuthLayout>
   );
 }

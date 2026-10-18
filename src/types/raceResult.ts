@@ -28,6 +28,9 @@ export interface RaceResult {
   id: string;
   subsessionId: number;
   teamId: number;
+  /** Display name of the iRacing team (resolved from the synced team cache). Present on the
+   * single-result endpoints only; null if the team was never synced. */
+  teamName?: string | null;
   seriesName: string | null;
   trackName: string;
   trackConfig: string | null;
@@ -50,3 +53,8 @@ export interface RaceResult {
   laps: RaceResultLap[];
   createdAt: string;
 }
+
+/** A row of the race-result list endpoints (GET /race-results, /by-car/:id, /by-track/:id): the
+ * result's own columns only — no driverStints and no laps. `by-driver` still returns full
+ * RaceResult rows (the driver page reads the stints). */
+export type RaceResultSummary = Omit<RaceResult, 'driverStints' | 'laps'>;

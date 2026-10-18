@@ -15,3 +15,6 @@ export interface User {
   createdAt: string;
   updatedAt: string;
 }
+
+/** Member count per status plus the total, from GET /admin/members/counts. */
+export type MemberStatusCounts = Record<UserStatus | 'ALL', number>;

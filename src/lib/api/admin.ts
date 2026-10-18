@@ -1,8 +1,9 @@
 import { api } from '../api';
-import type { Role, User, UserStatus } from '../../types/user';
+import type { MemberStatusCounts, Role, User, UserStatus } from '../../types/user';
 
 export const adminApi = {
   listMembers: (status?: UserStatus) => api.get<User[]>(`/admin/members${status ? `?status=${status}` : ''}`),
+  counts: () => api.get<MemberStatusCounts>('/admin/members/counts'),
   approve: (id: string) => api.post<User>(`/admin/members/${id}/approve`),
   reject: (id: string, reason?: string) => api.post<User>(`/admin/members/${id}/reject`, { reason }),
   suspend: (id: string) => api.post<User>(`/admin/members/${id}/suspend`),
