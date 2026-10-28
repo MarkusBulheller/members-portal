@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import AvatarUpload from '../../components/AvatarUpload';
 import PreferredClassChips, { normalizePreferredClasses } from '../../components/PreferredClassChips';
 import { SwitchRow, StintsRow } from '../../components/RacePreferenceFields';
@@ -27,6 +27,7 @@ function editableSnapshot(p: DriverProfile): string {
     p.startingDriver,
     p.wetDriver,
     p.nightDriver,
+    p.raceSummaryDm,
   ]);
 }
 
@@ -58,6 +59,15 @@ export default function EditMyProfilePage() {
     };
   }, []);
 
+  // "Get set up" on the dashboard links to #ir / #basics / #prefs; the sections only exist once the
+  // profile has loaded, so scroll to the hash after that.
+  const { hash } = useLocation();
+  const profileLoaded = profile !== null;
+  useEffect(() => {
+    if (!profileLoaded || !hash) return;
+    document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'start' });
+  }, [profileLoaded, hash]);
+
   function handleLinkClick() {
     setError(null);
     beginIracingLink().catch((err: unknown) => {
@@ -81,6 +91,7 @@ export default function EditMyProfilePage() {
         startingDriver: profile.startingDriver,
         wetDriver: profile.wetDriver,
         nightDriver: profile.nightDriver,
+        raceSummaryDm: profile.raceSummaryDm,
       });
       setProfile(updated);
       setSavedSnapshot(editableSnapshot(updated));
@@ -246,6 +257,12 @@ export default function EditMyProfilePage() {
                 description="The planner won’t give you more back-to-back stints than this."
                 value={profile.maxSuccessiveStints}
                 onChange={(maxSuccessiveStints) => setProfile({ ...profile, maxSuccessiveStints })}
+              />
+              <SwitchRow
+                label="Send me my race summary on Discord"
+                description="A private message from the team bot after a result is imported. Needs Discord to allow messages from server members."
+                on={profile.raceSummaryDm}
+                onChange={(on) => setProfile({ ...profile, raceSummaryDm: on })}
               />
             </section>
           </div>

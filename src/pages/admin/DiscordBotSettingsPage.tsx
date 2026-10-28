@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ApiError } from '../../lib/api';
+import { ApiError, apiUrl } from '../../lib/api';
 import { discordBotSettingsApi } from '../../lib/api/discordBotSettings';
 import type { DiscordBotSettings, DiscordBotStatus } from '../../types/discordBotSettings';
 
@@ -41,10 +41,16 @@ function StatusRow({
   );
 }
 
+const INTERACTIONS_URL = apiUrl('/discord/interactions');
+
 export default function DiscordBotSettingsPage() {
   const [settings, setSettings] = useState<DiscordBotSettings | null>(null);
   const [botToken, setBotToken] = useState('');
   const [eventsChannelId, setEventsChannelId] = useState('');
+  const [resultsChannelId, setResultsChannelId] = useState('');
+  const [publicKey, setPublicKey] = useState('');
+  const [alertUserId, setAlertUserId] = useState('');
+  const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -56,6 +62,8 @@ export default function DiscordBotSettingsPage() {
     void discordBotSettingsApi.get().then((s) => {
       setSettings(s);
       setEventsChannelId(s.eventsChannelId ?? '');
+      setResultsChannelId(s.resultsChannelId ?? '');
+      setAlertUserId(s.alertUserId ?? '');
     });
 
   const loadStatus = () => {
@@ -79,15 +87,31 @@ export default function DiscordBotSettingsPage() {
       const updated = await discordBotSettingsApi.update({
         botToken: botToken.trim() || undefined,
         eventsChannelId,
+        resultsChannelId: resultsChannelId.trim(),
+        publicKey: publicKey.trim() || undefined,
+        alertUserId: alertUserId.trim(),
       });
       setSettings(updated);
       setBotToken('');
+      setPublicKey('');
+      setResultsChannelId(updated.resultsChannelId ?? '');
+      setAlertUserId(updated.alertUserId ?? '');
       setSaved(true);
       loadStatus();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to save settings');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function copyInteractionsUrl() {
+    try {
+      await navigator.clipboard.writeText(INTERACTIONS_URL);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard blocked: the URL is selectable in the read-only field.
     }
   }
 
@@ -137,6 +161,83 @@ export default function DiscordBotSettingsPage() {
           <span className="text-xs text-ds-dim">
             Right-click the channel in Discord (Developer Mode must be on) → Copy Channel ID. The bot must already
             have Send Messages permission there.
+          </span>
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="lbl">Results channel ID</span>
+          <input
+            type="text"
+            value={resultsChannelId}
+            onChange={(e) => setResultsChannelId(e.target.value)}
+            placeholder="e.g. 1135558244635516998"
+            inputMode="numeric"
+            className="input tabular-nums"
+          />
+          <span className="text-xs text-ds-dim">
+            Where imported results are announced. Same steps as above (Copy Channel ID); the bot needs Send Messages
+            permission there too. Leave empty to skip announcements.
+          </span>
+        </label>
+
+        <div className="flex flex-col gap-1">
+          <h3 className="m-0 text-base font-extrabold text-ds-ink">Sign-up buttons</h3>
+          <span className="text-[13px] text-ds-muted">
+            Lets members sign up straight from the event post in Discord.
+          </span>
+        </div>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="lbl">Interactions endpoint URL</span>
+          <span className="flex gap-2">
+            <input
+              type="text"
+              readOnly
+              value={INTERACTIONS_URL}
+              onFocus={(e) => e.currentTarget.select()}
+              className="input min-w-0 flex-1 tabular-nums"
+            />
+            <button type="button" onClick={() => void copyInteractionsUrl()} className="btn-secondary flex-none">
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </span>
+          <span className="text-xs text-ds-dim">
+            Paste this into Discord Developer Portal → your app → General Information → Interactions Endpoint URL.
+          </span>
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="lbl">Application public key</span>
+          <input
+            type="text"
+            value={publicKey}
+            onChange={(e) => setPublicKey(e.target.value)}
+            placeholder={settings.publicKeySet ? '••••••••••••••••••••' : 'Not set'}
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={64}
+            className="input tabular-nums"
+          />
+          <span className="text-xs text-ds-dim">
+            {settings.publicKeySet
+              ? 'A public key is saved. Paste a new one to replace it. '
+              : ''}
+            Discord Developer Portal → your app → General Information → Public Key (64 characters).
+          </span>
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="lbl">Alert user ID</span>
+          <input
+            type="text"
+            value={alertUserId}
+            onChange={(e) => setAlertUserId(e.target.value)}
+            placeholder="e.g. 1135558244635516998"
+            inputMode="numeric"
+            className="input tabular-nums"
+          />
+          <span className="text-xs text-ds-dim">
+            Your Discord user ID (gets a DM when someone who isn't linked tries to sign up).
           </span>
         </label>
 

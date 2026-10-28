@@ -22,6 +22,9 @@ export interface EventSignup {
   status: SignupStatus;
   notes: string | null;
   timeslots: EventTimeslot[];
+  /** Timeslot ids in the driver's preference order, most preferred first — null for signups that
+   * were never ranked (treat as chronological). Use rankTimeslots() to apply it. */
+  timeslotPreference?: string[] | null;
   /** Actual wall-clock hours (ISO timestamps, on-the-hour) this driver can take a driving
    * stint — absolute, not offsets, so the same real hour lines up across every timeslot's
    * availability grid. Distinct from `timeslots`, which are candidate overall start times. */
@@ -56,6 +59,8 @@ export interface RaceEvent {
    * unless explicitly linked. */
   iracingSeasonId: number | null;
   iracingRaceWeekNum: number | null;
+  /** Drivers a team should have for the readiness check; null = the default (4). */
+  minDriversPerTeam: number | null;
   createdByUserId: string;
   createdAt: string;
   updatedAt: string;
@@ -72,8 +77,32 @@ export interface EventViewerStatus {
   raced: boolean;
 }
 
+/** An active signup of a guest driver (a manually added driver with no portal account) — they sign
+ * up through Discord. Separate from member `signups`; see GET /events/:id `guestSignups`. */
+export interface EventGuestSignup {
+  id: string;
+  eventId: string;
+  /** The guest's DriverProfile id. */
+  driverProfileId: string;
+  /** iracingName ?? displayName. */
+  driverName: string;
+  avatarUrl: string | null;
+  carClass: string | null;
+  /** The chosen start times (EventTimeslot ids). */
+  timeslotIds: string[];
+  /** Same meaning as EventSignup.timeslotPreference. */
+  timeslotPreference: string[] | null;
+  status: 'CONFIRMED' | 'CANCELLED';
+  signedUpAt: string;
+  /** Already placed on one of the event's teams (as a roster guest). */
+  onTeam: boolean;
+  eventTeamId: string | null;
+}
+
 export interface RaceEventDetail extends RaceEvent {
   signups: EventSignup[];
+  /** Active guest signups; optional so older payloads still type-check. */
+  guestSignups?: EventGuestSignup[];
 }
 
 /** One team the current driver has a stint assignment in, for an event that hasn't fully finished
@@ -85,6 +114,9 @@ export interface UpcomingStintAssignment {
   teamId: string;
   teamName: string;
   timeslotStartsAt: string | null;
+  /** The green flag (timeslot start + the team's race-start offset) — what stint times count from.
+   * Optional for older payloads; fall back to timeslotStartsAt. */
+  raceStartsAt?: string | null;
   raceLengthMinutes: number;
   isLive: boolean;
   /** This driver's next stint in the crew's rotation, if one is still ahead of them — null once
@@ -125,6 +157,8 @@ export interface CreateEventInput {
   /** undefined = leave unchanged (update) / unset (create), null = clear, number = set. */
   iracingSeasonId?: number | null;
   iracingRaceWeekNum?: number | null;
+  /** undefined = leave unchanged, null = clear (back to the default), number = set. */
+  minDriversPerTeam?: number | null;
 }
 
 export type UpdateEventInput = Partial<CreateEventInput>;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { eventTeamDummyDriversApi } from '../lib/api/eventTeamDummyDrivers';
@@ -6,9 +6,11 @@ import { eventTeamsApi } from '../lib/api/eventTeams';
 import { eventsApi } from '../lib/api/events';
 import { ApiError } from '../lib/api';
 import { formatClock, formatSlot } from '../lib/eventFormatting';
+import { guestSlots } from '../lib/guestSignups';
 import { initials } from '../lib/initials';
+import RankedStartTimes from './RankedStartTimes';
 import type { Car } from '../types/car';
-import type { EventSignup, EventTimeslot } from '../types/event';
+import type { EventGuestSignup, EventSignup, EventTimeslot } from '../types/event';
 import type { EventTeam } from '../types/eventTeam';
 import type { IracingTeam } from '../types/iracingTeam';
 
@@ -26,6 +28,9 @@ interface Props {
    * for a driver with no linked iRacing account, which can't be roster-checked. */
   driverIracingCustIds: Record<string, string | null>;
   signups: EventSignup[];
+  /** Guest drivers (no portal account) who signed up through Discord. Those not yet on a team are
+   * offered in the "Not on a team" pool and join a team as a roster guest. */
+  guestSignups?: EventGuestSignup[];
   /** False for a non-iRacing event, where the iRacing team link has no meaning. Defaults true. */
   isIracing?: boolean;
   /** Every portal member (with an account) an admin may add to a team. Those without an active
@@ -41,18 +46,45 @@ interface Props {
   onChange: () => void;
 }
 
-/** Pool detail line, e.g. "GT3 (or GTP) · 13:00, 20:00" — class plus the start times the driver
- * flagged at signup. Times carry the weekday/date only when the event has candidates on several days. */
-function buildSignupDetail(signup: EventSignup, multiDay: boolean): string {
-  const parts: string[] = [];
+/** Pool detail line, e.g. "GT3 (or GTP) · 1st 13:00, 2nd 20:00" — class plus the start times the
+ * driver flagged at signup, in their preference order (most preferred emphasised; the ordinals only
+ * appear with 2+ times). Times carry the weekday/date only when the event has candidates on several days. */
+function buildSignupDetail(signup: EventSignup, multiDay: boolean): ReactNode {
+  const parts: ReactNode[] = [];
   if (signup.carClass) {
     parts.push(signup.carClass + (signup.secondaryCarClass ? ` (or ${signup.secondaryCarClass})` : ''));
   }
-  const slots = [...signup.timeslots].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
-  if (slots.length > 0) {
-    parts.push(slots.map((t) => (multiDay ? formatSlot(t.startsAt) : formatClock(t.startsAt))).join(', '));
+  if (signup.timeslots.length > 0) {
+    parts.push(
+      <RankedStartTimes
+        key="times"
+        timeslots={signup.timeslots}
+        preference={signup.timeslotPreference}
+        format={multiDay ? formatSlot : formatClock}
+      />,
+    );
   }
-  return parts.join(' · ');
+  if (parts.length === 0) return null;
+  return parts.map((part, index) => (index === 0 ? part : <span key={index}> · {part}</span>));
+}
+
+/** Pool detail line for a guest signup — same as buildSignupDetail, from the guest's chosen times. */
+function buildGuestSignupDetail(guest: EventGuestSignup, timeslots: EventTimeslot[], multiDay: boolean): ReactNode {
+  const slots = guestSlots(guest, timeslots);
+  const parts: ReactNode[] = [];
+  if (guest.carClass) parts.push(guest.carClass);
+  if (slots.length > 0) {
+    parts.push(
+      <RankedStartTimes
+        key="times"
+        timeslots={slots}
+        preference={guest.timeslotPreference}
+        format={multiDay ? formatSlot : formatClock}
+      />,
+    );
+  }
+  if (parts.length === 0) return null;
+  return parts.map((part, index) => (index === 0 ? part : <span key={index}> · {part}</span>));
 }
 
 function carName(cars: Car[], carId: string | null): string | null {
@@ -69,6 +101,7 @@ export default function EventTeamsPanel({
   driverNames,
   driverIracingCustIds,
   signups,
+  guestSignups = [],
   isIracing = true,
   rosterMembers = [],
   rosterGuests = [],
@@ -107,7 +140,13 @@ export default function EventTeamsPanel({
   const placedGuestProfileIds = new Set(
     teams.flatMap((t) => t.dummyDrivers ?? []).flatMap((d) => (d.driverProfileId ? [d.driverProfileId] : [])),
   );
-  const availableGuests = rosterGuests.filter((g) => !placedGuestProfileIds.has(g.profileId));
+  /** Signed-up guests not on a team yet (the server's flag, double-checked against the loaded teams). */
+  const poolGuests = guestSignups.filter((g) => !g.onTeam && !placedGuestProfileIds.has(g.driverProfileId));
+  const poolGuestProfileIds = new Set(poolGuests.map((g) => g.driverProfileId));
+  const availableGuests = rosterGuests.filter(
+    (g) => !placedGuestProfileIds.has(g.profileId) && !poolGuestProfileIds.has(g.profileId),
+  );
+  const poolTotal = signups.length + guestSignups.length;
   /** Avatar fill: neutral for everyone, the accent for the signed-in user. */
   function avatarClass(userId: string | null): string {
     return userId !== null && userId === user?.id ? 'bg-w2w-red text-on-accent' : 'bg-ds-control text-ds-ink';
@@ -201,6 +240,20 @@ export default function EventTeamsPanel({
     }
   }
 
+  /** Puts a signed-up guest on a team (becomes a roster guest of that team's plan). */
+  async function handlePlaceGuestSignup(profileId: string, teamId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await eventsApi.placeGuestOnTeam(eventId, profileId, teamId);
+      onChange();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to add driver');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleAddGuest(profileId: string, teamId: string) {
     setBusy(true);
     setError(null);
@@ -249,20 +302,21 @@ export default function EventTeamsPanel({
     const custId = driverIracingCustIds[userId];
     if (!custId) return 'unknown';
     const team = iracingTeams.find((t) => t.teamId === iracingTeamId);
-    if (!team) return 'unknown';
+    // A team added by hand has no roster to check against.
+    if (!team || team.manual) return 'unknown';
     return team.members.some((m) => m.custId === Number(custId)) ? 'on' : 'off';
   }
 
   return (
     <div className="flex flex-wrap items-start gap-5">
-      {(isAdmin || unassigned.length > 0) && (
+      {(isAdmin || unassigned.length > 0 || poolGuests.length > 0) && (
         <section aria-labelledby="pool-title" className="cut min-w-0 flex-[1_1_300px] bg-ds-panel pb-1.5 pt-5">
           <div className="flex items-center justify-between gap-2 px-5 pb-3">
             <h2 id="pool-title" className="h2">
               Not on a team
             </h2>
             <span className="chip px-3 py-[3px]">
-              {unassigned.length} of {signups.length}
+              {unassigned.length + poolGuests.length} of {poolTotal}
             </span>
           </div>
           {unassigned.map((signup) => {
@@ -301,7 +355,43 @@ export default function EventTeamsPanel({
               </div>
             );
           })}
-          {unassigned.length === 0 && (
+          {poolGuests.map((guest) => {
+            const detail = buildGuestSignupDetail(guest, timeslots, multiDay);
+            return (
+              <div key={guest.id} className="row-hover flex flex-col gap-2.5 border-t border-ds-line px-5 py-3.5">
+                <div className="flex items-center gap-3">
+                  <span
+                    aria-hidden="true"
+                    className={`cut-xs flex h-[34px] w-[34px] shrink-0 items-center justify-center text-[13px] num ${avatarClass(null)}`}
+                  >
+                    {initials(guest.driverName)}
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-bold">{guest.driverName}</span>
+                    {detail && <span className="text-xs text-ds-muted">{detail}</span>}
+                  </span>
+                  <span className="chip chip-sm">Guest</span>
+                </div>
+                {isAdmin && teams.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pl-[46px]">
+                    {teams.map((team) => (
+                      <button
+                        key={team.id}
+                        type="button"
+                        onClick={() => void handlePlaceGuestSignup(guest.driverProfileId, team.id)}
+                        disabled={busy}
+                        aria-label={`Add ${guest.driverName} to ${team.name}`}
+                        className="cut-xs min-h-8 max-w-full truncate border-0 bg-ds-control px-3 text-xs font-bold uppercase text-ds-ink hover:bg-ds-control-hover disabled:opacity-40"
+                      >
+                        + {shortTeamName(team.name)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {unassigned.length === 0 && poolGuests.length === 0 && (
             <p className="m-0 border-t border-ds-line px-5 py-4 text-ds-muted">Everyone who signed up is on a team.</p>
           )}
         </section>
@@ -351,8 +441,19 @@ export default function EventTeamsPanel({
                       </p>
                     )}
                   </div>
-                  <span className={`chip ${driverCount >= 3 ? 'chip-accent' : 'chip-warn'}`}>
-                    {driverCount} {driverCount === 1 ? 'driver' : 'drivers'}
+                  <span className="flex flex-none flex-wrap items-center justify-end gap-1.5">
+                    {team.raceResultId && (
+                      <Link
+                        to={`/results/${team.raceResultId}`}
+                        className="chip chip-accent no-underline hover:brightness-125"
+                        aria-label={`Race result for ${team.name}`}
+                      >
+                        Result
+                      </Link>
+                    )}
+                    <span className={`chip ${driverCount >= 3 ? 'chip-accent' : 'chip-warn'}`}>
+                      {driverCount} {driverCount === 1 ? 'driver' : 'drivers'}
+                    </span>
                   </span>
                 </div>
 
@@ -394,11 +495,18 @@ export default function EventTeamsPanel({
                           className="input px-2.5 text-[13px]"
                         >
                           <option value="">No link</option>
-                          {iracingTeams.map((t) => (
-                            <option key={t.teamId} value={t.teamId}>
-                              {t.teamName}
-                            </option>
-                          ))}
+                          {/* Inactive teams are hidden from the picker, except the one this crew already uses. */}
+                          {iracingTeams
+                            .filter((t) => t.active !== false || t.teamId === team.iracingTeamId)
+                            .map((t) => (
+                              <option key={t.teamId} value={t.teamId}>
+                                {t.teamName}
+                                {t.active === false ? ' (inactive)' : ''}
+                              </option>
+                            ))}
+                          {team.iracingTeamId !== null && !iracingTeams.some((t) => t.teamId === team.iracingTeamId) && (
+                            <option value={team.iracingTeamId}>iRacing team {team.iracingTeamId} (inactive)</option>
+                          )}
                         </select>
                       </FormField>
                     )}
@@ -475,7 +583,11 @@ export default function EventTeamsPanel({
                     </ul>
                   )}
 
-                  {isAdmin && (unassigned.length > 0 || notSignedUp.length > 0 || availableGuests.length > 0) && (
+                  {isAdmin &&
+                    (unassigned.length > 0 ||
+                      poolGuests.length > 0 ||
+                      notSignedUp.length > 0 ||
+                      availableGuests.length > 0) && (
                     <select
                       value=""
                       onChange={(e) => {
@@ -484,6 +596,7 @@ export default function EventTeamsPanel({
                         // "new:<userId>" = a member who hasn't signed up; anything else is an
                         // existing unassigned signup's id.
                         if (value.startsWith('new:')) void handleAddMember(value.slice(4), team.id);
+                        else if (value.startsWith('guestsig:')) void handlePlaceGuestSignup(value.slice(9), team.id);
                         else if (value.startsWith('guest:')) void handleAddGuest(value.slice(6), team.id);
                         else void handleAssign(value, team.id);
                       }}
@@ -492,11 +605,16 @@ export default function EventTeamsPanel({
                       className="input mt-2 w-full self-start text-xs sm:w-64"
                     >
                       <option value="">+ Add driver...</option>
-                      {unassigned.length > 0 && (
+                      {(unassigned.length > 0 || poolGuests.length > 0) && (
                         <optgroup label="Signed up">
                           {unassigned.map((signup) => (
                             <option key={signup.id} value={signup.id}>
                               {driverNames[signup.userId] ?? 'Unknown driver'}
+                            </option>
+                          ))}
+                          {poolGuests.map((guest) => (
+                            <option key={guest.id} value={`guestsig:${guest.driverProfileId}`}>
+                              {guest.driverName} (guest)
                             </option>
                           ))}
                         </optgroup>

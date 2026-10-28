@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import AchievementIconView from '../../components/AchievementIcon';
 import CountryFlag from '../../components/CountryFlag';
+import DriverStatsSection from '../../components/DriverStats';
 import { positionLabel } from '../../components/RaceResultRow';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -9,6 +10,7 @@ import { achievementsApi } from '../../lib/api/achievements';
 import { ApiError, resolveAssetUrl } from '../../lib/api';
 import { driversApi } from '../../lib/api/drivers';
 import { raceResultsApi } from '../../lib/api/raceResults';
+import { computeDriverStats } from '../../lib/driverStats';
 import { formatDuration } from '../../lib/lapTime';
 import { licenseClassStyle } from '../../lib/iracingClass';
 import { initials } from '../../lib/initials';
@@ -201,6 +203,9 @@ export default function DriverDetailPage() {
   }, [id]);
 
   const { page, setPage, totalPages, pageItems: pagedRaces } = usePagination(races);
+
+  // The results list can be long; recompute only when the loaded races or the driver change.
+  const driverStats = useMemo(() => (races && id ? computeDriverStats(races, id) : null), [races, id]);
 
   if (!driver) {
     return loadError ? (
@@ -445,6 +450,8 @@ export default function DriverDetailPage() {
         </section>
       )}
 
+      {driverStats && <DriverStatsSection stats={driverStats} />}
+
       <section aria-labelledby="ach-title" className="flex flex-col gap-3.5 pt-2">
         <div className="flex flex-wrap items-center justify-between gap-2.5">
           <div className="flex flex-col gap-0.5">
@@ -561,18 +568,19 @@ export default function DriverDetailPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <div role="table" aria-labelledby="races-title" className="min-w-[760px]">
+              {/* Phones get Race (car on its second line), result and drive time; the rest from sm up. */}
+              <div role="table" aria-labelledby="races-title" className="sm:min-w-[760px]">
                 <div role="rowgroup">
                   <div
                     role="row"
-                    className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.7fr)_80px_90px_110px_70px] items-center text-[11px] font-bold uppercase text-ds-dim"
+                    className="grid grid-cols-[minmax(0,1fr)_64px_92px] items-center text-[11px] font-bold uppercase text-ds-dim sm:grid-cols-[minmax(0,2.2fr)_minmax(0,1.7fr)_80px_90px_110px_70px]"
                   >
                     <span role="columnheader" className="py-2.5 pl-5 pr-2">Race</span>
-                    <span role="columnheader" className="px-2 py-2.5">Car</span>
+                    <span role="columnheader" className="px-2 py-2.5 max-sm:hidden">Car</span>
                     <span role="columnheader" className="px-2 py-2.5 text-right">Class</span>
-                    <span role="columnheader" className="px-2 py-2.5 text-right">My laps</span>
-                    <span role="columnheader" className="px-2 py-2.5 text-right">Drive time</span>
-                    <span role="columnheader" className="py-2.5 pl-2 pr-5 text-right">Inc</span>
+                    <span role="columnheader" className="px-2 py-2.5 text-right max-sm:hidden">My laps</span>
+                    <span role="columnheader" className="py-2.5 pl-2 pr-5 text-right sm:px-2">Drive time</span>
+                    <span role="columnheader" className="py-2.5 pl-2 pr-5 text-right max-sm:hidden">Inc</span>
                   </div>
                 </div>
                 <div role="rowgroup">
@@ -590,7 +598,7 @@ export default function DriverDetailPage() {
                         key={race.id}
                         to={`/results/${race.id}`}
                         role="row"
-                        className="row-hover grid min-h-16 grid-cols-[minmax(0,2.2fr)_minmax(0,1.7fr)_80px_90px_110px_70px] items-center border-t border-ds-line text-ds-ink"
+                        className="row-hover grid min-h-16 grid-cols-[minmax(0,1fr)_64px_92px] items-center border-t border-ds-line text-ds-ink sm:grid-cols-[minmax(0,2.2fr)_minmax(0,1.7fr)_80px_90px_110px_70px]"
                       >
                         <span role="cell" className="min-w-0 py-2.5 pl-5 pr-2">
                           <span className="block font-bold">
@@ -602,8 +610,11 @@ export default function DriverDetailPage() {
                               .filter(Boolean)
                               .join(' · ')}
                           </span>
+                          {race.carName && (
+                            <span className="block truncate text-xs text-ds-muted sm:hidden">{race.carName}</span>
+                          )}
                         </span>
-                        <span role="cell" className="min-w-0 px-2 py-2.5 text-ds-ink-soft">
+                        <span role="cell" className="min-w-0 px-2 py-2.5 text-ds-ink-soft max-sm:hidden">
                           {race.carName ?? '—'}
                         </span>
                         <span role="cell" className="px-2 py-2.5 text-right">
@@ -618,13 +629,13 @@ export default function DriverDetailPage() {
                             {positionLabel(position)}
                           </span>
                         </span>
-                        <span role="cell" className="num px-2 py-2.5 text-right text-base">
+                        <span role="cell" className="num px-2 py-2.5 text-right text-base max-sm:hidden">
                           {stint?.lapsComplete ?? '—'}
                         </span>
-                        <span role="cell" className="num px-2 py-2.5 text-right text-base">
+                        <span role="cell" className="num py-2.5 pl-2 pr-5 text-right text-base sm:px-2">
                           {stint ? formatDuration(driveTimeMs) : '—'}
                         </span>
-                        <span role="cell" className="py-2.5 pl-2 pr-5 text-right tabular-nums text-ds-ink-soft">
+                        <span role="cell" className="py-2.5 pl-2 pr-5 text-right tabular-nums text-ds-ink-soft max-sm:hidden">
                           {stint ? `${stint.incidents ?? 0}x` : '—'}
                         </span>
                       </Link>

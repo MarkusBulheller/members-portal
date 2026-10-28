@@ -60,6 +60,7 @@ export default function SignupForm({
   const carClassHeadingId = useId();
   const secondaryClassHeadingId = useId();
   const favouriteCarId = useId();
+  const rankHeadingId = useId();
 
   const [timeslotIds, setTimeslotIds] = useState(initial.timeslotIds);
   const [carClass, setCarClass] = useState(initial.carClass);
@@ -76,8 +77,27 @@ export default function SignupForm({
     onChangeRef.current = onChange;
   });
   useEffect(() => {
-    onChangeRef.current?.({ timeslotIds, carClass, secondaryCarClass, carId, availableHours });
+    onChangeRef.current?.({
+      timeslotIds,
+      timeslotPreference: timeslotIds,
+      carClass,
+      secondaryCarClass,
+      carId,
+      availableHours,
+    });
   }, [timeslotIds, carClass, secondaryCarClass, carId, availableHours]);
+
+  // Re-focus the pressed move button after a reorder (the keyed rows swap places in the DOM,
+  // which can drop focus) and announce the new position to screen readers.
+  const rankListRef = useRef<HTMLUListElement>(null);
+  const pendingFocus = useRef<string | null>(null);
+  const [rankAnnouncement, setRankAnnouncement] = useState('');
+  useEffect(() => {
+    const target = pendingFocus.current;
+    if (!target) return;
+    pendingFocus.current = null;
+    rankListRef.current?.querySelector<HTMLButtonElement>(`[data-rank-btn="${target}"]`)?.focus();
+  }, [timeslotIds]);
 
   const carsInClass = cars.filter((c) => c.carClass === carClass);
   const you = driverLabel === 'You' ? 'you' : 'they';
@@ -95,6 +115,20 @@ export default function SignupForm({
     } else {
       setTimeslotIds((prev) => [...prev, slotId]);
     }
+  }
+
+  /** Moves a picked start time one place up (-1) or down (+1) the preference list. */
+  function moveSlot(slotId: string, delta: -1 | 1) {
+    const from = timeslotIds.indexOf(slotId);
+    const to = from + delta;
+    if (from === -1 || to < 0 || to >= timeslotIds.length) return;
+    const next = [...timeslotIds];
+    next.splice(from, 1);
+    next.splice(to, 0, slotId);
+    const slot = event.timeslots.find((s) => s.id === slotId);
+    pendingFocus.current = `${slotId}:${delta === -1 ? 'up' : 'down'}`;
+    setTimeslotIds(next);
+    if (slot) setRankAnnouncement(`${slotTime(new Date(slot.startsAt))} moved to position ${to + 1} of ${next.length}`);
   }
 
   /** "Select all" / "Clear" for one start time's hours. */
@@ -152,6 +186,74 @@ export default function SignupForm({
             );
           })}
         </div>
+        {timeslotIds.length >= 2 && (
+          <div className="cut-sm flex flex-col gap-2 bg-ds-panel p-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+              <span id={rankHeadingId} className="lbl text-xs">
+                Rank your picks
+              </span>
+              <span className="text-xs text-ds-muted">Most preferred first</span>
+            </div>
+            <ul ref={rankListRef} aria-labelledby={rankHeadingId} className="m-0 flex list-none flex-col gap-1 p-0">
+              {timeslotIds.map((slotId, index) => {
+                const slot = event.timeslots.find((s) => s.id === slotId);
+                if (!slot) return null;
+                const start = new Date(slot.startsAt);
+                const label = slotTime(start);
+                const isFirst = index === 0;
+                const isLast = index === timeslotIds.length - 1;
+                const moveClass = (disabled: boolean) =>
+                  `cut-xs flex h-8 w-8 flex-none items-center justify-center border-0 p-0 text-ds-ink-soft ${
+                    disabled ? 'cursor-default bg-ds-field opacity-40' : 'bg-ds-control hover:bg-ds-control-hover'
+                  }`;
+                return (
+                  <li key={slotId} className="cut-xs flex items-center gap-3 bg-ds-field py-1.5 pl-2 pr-1.5">
+                    <span
+                      className={`num cut-xs flex h-7 w-7 flex-none items-center justify-center text-sm ${
+                        isFirst ? 'bg-w2w-red text-on-accent' : 'bg-ds-control text-ds-muted'
+                      }`}
+                    >
+                      {index + 1}
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+                      <span className={`num text-lg leading-tight ${isFirst ? 'text-ds-ink' : 'text-ds-ink-soft'}`}>
+                        {label}
+                      </span>
+                      <span className="text-xs text-ds-muted">{slotDay(start)}</span>
+                    </span>
+                    <button
+                      type="button"
+                      data-rank-btn={`${slotId}:up`}
+                      aria-label={`Move ${label} up`}
+                      aria-disabled={isFirst}
+                      onClick={() => moveSlot(slotId, -1)}
+                      className={moveClass(isFirst)}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="square" aria-hidden="true">
+                        <path d="M6 15l6-6 6 6" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      data-rank-btn={`${slotId}:down`}
+                      aria-label={`Move ${label} down`}
+                      aria-disabled={isLast}
+                      onClick={() => moveSlot(slotId, 1)}
+                      className={moveClass(isLast)}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="square" aria-hidden="true">
+                        <path d="M6 9l6 6 6-6" />
+                      </svg>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <span className="sr-only" role="status" aria-live="polite">
+              {rankAnnouncement}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-2.5">
@@ -292,7 +394,9 @@ export default function SignupForm({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => onSubmit({ timeslotIds, carClass, secondaryCarClass, carId, availableHours })}
+            onClick={() =>
+              onSubmit({ timeslotIds, timeslotPreference: timeslotIds, carClass, secondaryCarClass, carId, availableHours })
+            }
             disabled={submitting || timeslotIds.length === 0 || !carClass}
             className="btn-primary disabled:bg-ds-control disabled:text-ds-dim disabled:opacity-100"
           >

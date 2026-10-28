@@ -11,6 +11,7 @@ import {
   type SeriesWeekOption,
 } from '../lib/iracingSeriesWeeks';
 import { CAR_CLASSES } from '../types/carClass';
+import TimeField from './TimeField';
 import type { IracingSeriesSeasonDetail } from '../types/iracingSeries';
 import { RACE_LENGTH_PRESETS, type RaceLengthMinutes } from '../types/raceLength';
 
@@ -280,11 +281,10 @@ export default function GenerateEventsFromSeriesPanel({
             ))}
             {addingTime ? (
               <span className="inline-flex items-center gap-1.5">
-                <input
+                <TimeField
                   ref={draftTimeRef}
-                  type="time"
                   value={draftTime}
-                  onChange={(e) => setDraftTime(e.target.value)}
+                  onChange={setDraftTime}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
@@ -295,7 +295,8 @@ export default function GenerateEventsFromSeriesPanel({
                       setAddingTime(false);
                     }
                   }}
-                  className="input !h-10 !w-[130px] font-bold tabular-nums"
+                  className="w-[140px]"
+                  inputClassName="font-bold"
                   aria-label="New start time"
                 />
                 <button

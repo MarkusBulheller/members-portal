@@ -64,7 +64,7 @@ export default function Modal({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 print:hidden" onClick={onClose}>
       <div
         ref={dialogRef}
         role="dialog"

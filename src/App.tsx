@@ -32,10 +32,13 @@ const EventsListPage = lazy(() => import('./pages/events/EventsListPage'));
 const EventTeamBuildingPage = lazy(() => import('./pages/events/EventTeamBuildingPage'));
 const EventTeamPlanPage = lazy(() => import('./pages/events/EventTeamPlanPage'));
 const IracingOAuthCallbackPage = lazy(() => import('./pages/iracing/IracingOAuthCallbackPage'));
+const RecapPage = lazy(() => import('./pages/recap/RecapPage'));
 const RaceResultDetailPage = lazy(() => import('./pages/results/RaceResultDetailPage'));
 const RaceResultFormPage = lazy(() => import('./pages/results/RaceResultFormPage'));
 const RaceResultsListPage = lazy(() => import('./pages/results/RaceResultsListPage'));
 const SharedRaceResultPage = lazy(() => import('./pages/results/SharedRaceResultPage'));
+const FollowRacePage = lazy(() => import('./pages/public/FollowRacePage'));
+const RaceOverlayPage = lazy(() => import('./pages/public/RaceOverlayPage'));
 const SeriesDetailPage = lazy(() => import('./pages/series/SeriesDetailPage'));
 const SeriesListPage = lazy(() => import('./pages/series/SeriesListPage'));
 const TrackDetailPage = lazy(() => import('./pages/tracks/TrackDetailPage'));
@@ -55,6 +58,8 @@ function AppRoutes() {
           <Route path="/not-in-server" element={<NotInServerPage />} />
           <Route path="/api/auth/callback/iracing" element={<IracingOAuthCallbackPage />} />
           <Route path="/share/results/:token" element={<SharedRaceResultPage />} />
+          <Route path="/follow/:token" element={<FollowRacePage />} />
+          <Route path="/overlay/:token" element={<RaceOverlayPage />} />
 
           <Route element={<RequireAuth />}>
             <Route element={<DashboardShell />}>
@@ -80,6 +85,8 @@ function AppRoutes() {
               <Route path="/results" element={<RaceResultsListPage />} />
               <Route path="/results/:id" element={<RaceResultDetailPage />} />
 
+              <Route path="/recap" element={<RecapPage />} />
+
               <Route element={<RequireAdmin />}>
                 <Route path="/events/new" element={<EventFormPage />} />
                 <Route path="/events/:id/edit" element={<EventFormPage />} />
@@ -97,7 +104,8 @@ function AppRoutes() {
                 <Route path="/admin/settings/:tab" element={<SettingsAdminPage />} />
                 <Route path="/admin/achievements" element={<Navigate to="/admin/settings/achievements" replace />} />
                 <Route path="/admin/iracing-teams" element={<Navigate to="/admin/settings/iracing-teams" replace />} />
-                <Route path="/admin/team-highlights" element={<Navigate to="/admin/settings/team-highlights" replace />} />
+                <Route path="/admin/auto-import" element={<Navigate to="/admin/settings/auto-import" replace />} />
+                <Route path="/admin/team-highlights"element={<Navigate to="/admin/settings/team-highlights" replace />} />
                 <Route path="/admin/discord-bot" element={<Navigate to="/admin/settings/discord-bot" replace />} />
               </Route>
             </Route>

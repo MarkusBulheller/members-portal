@@ -7,8 +7,9 @@ import { useAuth } from '../../context/AuthContext';
 import { raceResultsApi } from '../../lib/api/raceResults';
 import type { RaceResultSummary } from '../../types/raceResult';
 
+// Phones: result, race (car and date on its extra lines) and laps; the full six columns from sm up.
 const GRID =
-  'grid grid-cols-[76px_minmax(0,1.5fr)_minmax(0,1.1fr)_112px_70px_70px] items-center gap-x-3 px-5';
+  'grid grid-cols-[60px_minmax(0,1fr)_44px] items-center gap-x-3 px-4 sm:grid-cols-[76px_minmax(0,1.5fr)_minmax(0,1.1fr)_112px_70px_70px] sm:px-5';
 
 const PAGE_SIZE = 10;
 
@@ -191,15 +192,15 @@ export default function RaceResultsListPage() {
 
           <section aria-label="Results" className="cut bg-ds-panel pb-3.5 pt-1.5">
             <div className="overflow-x-auto">
-              <div role="table" aria-label="Team results" className="min-w-[860px] text-sm">
+              <div role="table" aria-label="Team results" className="text-sm sm:min-w-[860px]">
                 <div role="rowgroup">
                   <div role="row" className={`${GRID} min-h-11 text-[11px] font-bold uppercase text-ds-dim`}>
                     <span role="columnheader">Class</span>
                     <span role="columnheader">Race</span>
-                    <span role="columnheader">Car</span>
-                    <span role="columnheader">Date</span>
+                    <span role="columnheader" className="max-sm:hidden">Car</span>
+                    <span role="columnheader" className="max-sm:hidden">Date</span>
                     <span role="columnheader" className="text-right">Laps</span>
-                    <span role="columnheader" className="text-right">Inc</span>
+                    <span role="columnheader" className="text-right max-sm:hidden">Inc</span>
                   </div>
                 </div>
                 <div role="rowgroup">
@@ -217,19 +218,35 @@ export default function RaceResultsListPage() {
                           to={`/results/${result.id}`}
                           className="group flex flex-col text-ds-ink hover:text-ds-ink"
                         >
-                          <span className="font-bold group-hover:text-w2w-red-ink">
-                            {result.trackName}
-                            {result.trackConfig ? ` — ${result.trackConfig}` : ''}
+                          <span className="flex items-center gap-2">
+                            <span className="min-w-0 font-bold group-hover:text-w2w-red-ink">
+                              {result.trackName}
+                              {result.trackConfig ? ` — ${result.trackConfig}` : ''}
+                            </span>
+                            {result.importSource === 'AUTO' && (
+                              <span className="chip chip-sm chip-accent" title="Imported automatically">
+                                Auto
+                              </span>
+                            )}
                           </span>
                           {result.seriesName && <span className="text-xs text-ds-muted">{result.seriesName}</span>}
+                          <span className="text-xs text-ds-muted sm:hidden">
+                            {[result.carName, result.startTime ? formatRaceDate(result.startTime) : null]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </span>
                         </Link>
                       </span>
-                      <span role="cell" className="text-ds-ink-soft">{result.carName ?? 'Unknown car'}</span>
-                      <span role="cell" className="whitespace-nowrap text-ds-muted">
+                      <span role="cell" className="text-ds-ink-soft max-sm:hidden">{result.carName ?? 'Unknown car'}</span>
+                      <span role="cell" className="whitespace-nowrap text-ds-muted max-sm:hidden">
                         {formatRaceDate(result.startTime)}
                       </span>
-                      <span role="cell" className="num text-right text-base">{result.teamLapsComplete ?? '—'}</span>
-                      <span role="cell" className="text-right tabular-nums text-ds-muted">
+                      <span role="cell" className="num text-right text-base">
+                        {result.teamLapsComplete ?? '—'}
+                        {/* The column header scrolls out of view on a phone, so label the number itself. */}
+                        <span className="block text-[10px] font-semibold uppercase text-ds-dim sm:hidden">laps</span>
+                      </span>
+                      <span role="cell" className="text-right tabular-nums text-ds-muted max-sm:hidden">
                         {result.teamIncidents !== null ? `${result.teamIncidents}x` : '—'}
                       </span>
                     </div>

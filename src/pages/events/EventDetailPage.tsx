@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import EventWeatherForecast from '../../components/EventWeatherForecast';
 import HourlyAvailabilityGrid from '../../components/HourlyAvailabilityGrid';
 import Modal from '../../components/Modal';
+import RankedStartTimes from '../../components/RankedStartTimes';
+import ReadinessPanel from '../../components/ReadinessPanel';
+import { isReadinessPhase } from '../../lib/readiness';
 import SignupForm from '../../components/SignupForm';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -11,6 +14,7 @@ import { carsApi } from '../../lib/api/cars';
 import { driversApi } from '../../lib/api/drivers';
 import { eventsApi } from '../../lib/api/events';
 import { formatClock, formatDayShort, formatDayTime, formatSlot } from '../../lib/eventFormatting';
+import { guestSlots } from '../../lib/guestSignups';
 import { initials } from '../../lib/initials';
 import {
   EMPTY_SIGNUP_VALUES,
@@ -18,6 +22,8 @@ import {
   signupToFormValues,
   type SignupFormValues,
 } from '../../lib/signupFormValues';
+import { canManageTeam } from '../../lib/teamAccess';
+import { ordinal, rankTimeslots } from '../../lib/timeslotPreference';
 import type { Car } from '../../types/car';
 import {
   SIM_LABELS,
@@ -139,11 +145,25 @@ export default function EventDetailPage() {
   }, []);
 
   const userId = user?.id;
+  // A team lead (non-admin) may edit the availability of signups that sit on a crew they lead.
+  // Leads are per event crew, and /auth/me already lists the crews the user leads, so no fetch is needed.
+  const isAdmin = user?.role === 'ADMIN';
+  const canEditSignup = (signup: EventSignup) =>
+    isAdmin || (signup.eventTeamId !== null && canManageTeam(user, { id: signup.eventTeamId }));
+  // The event loads asynchronously, so the browser's own #signups scroll (from a readiness fix) misses.
+  const { hash } = useLocation();
+  const eventReady = !!event;
+  useEffect(() => {
+    if (eventReady && hash === '#signups') document.getElementById('signups')?.scrollIntoView({ block: 'start' });
+  }, [eventReady, hash]);
   const mySignup = useMemo(
     () => event?.signups.find((s) => s.userId === userId && s.status !== 'CANCELLED'),
     [event, userId],
   );
   const activeSignups = useMemo(() => event?.signups.filter((s) => s.status !== 'CANCELLED') ?? [], [event]);
+  /** Guest drivers (no portal account) who signed up through Discord. */
+  const guestSignups = useMemo(() => event?.guestSignups?.filter((g) => g.status !== 'CANCELLED') ?? [], [event]);
+  const signedUpCount = activeSignups.length + guestSignups.length;
   const carNames = useMemo(() => Object.fromEntries(cars.map((c) => [c.id, c.name])), [cars]);
   // While signups are open anyone can sign up or edit; once they close (team building), only a
   // driver who's already in can keep adjusting their own availability — matches the backend rule
@@ -184,6 +204,7 @@ export default function EventDetailPage() {
       eventTeamId: mySignup?.eventTeamId ?? null,
       signedUpAt: mySignup?.signedUpAt ?? '',
       timeslots: event.timeslots.filter((slot) => draft.timeslotIds.includes(slot.id)),
+      timeslotPreference: draft.timeslotPreference,
       availableHours: draft.availableHours,
     };
     return mySignup ? activeSignups.map((sg) => (sg.id === mySignup.id ? own : sg)) : [...activeSignups, own];
@@ -252,7 +273,15 @@ export default function EventDetailPage() {
     setSubmitting(true);
     setError(null);
     try {
-      await eventsApi.updateSignupDetails(id, signup.id, formValuesToSignupInput(values));
+      const input = formValuesToSignupInput(values);
+      // A team lead may change start times and availability only; car / classes stay with admins.
+      await eventsApi.updateSignupDetails(
+        id,
+        signup.id,
+        isAdmin
+          ? input
+          : { timeslotIds: input.timeslotIds, timeslotPreference: input.timeslotPreference, availableHours: input.availableHours },
+      );
       load();
       setAdminEditing(null);
       setLiveMessage(`${driverNames[signup.userId] ?? 'Driver'}'s signup updated.`);
@@ -318,6 +347,22 @@ export default function EventDetailPage() {
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to delete signup');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRemoveGuest(driverProfileId: string, name: string) {
+    if (!id) return;
+    if (!(await confirm(`Remove ${name} from this event's signups?`, { confirmLabel: 'Remove' }))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await eventsApi.cancelGuestSignup(id, driverProfileId);
+      load();
+      setLiveMessage(`${name} removed.`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to remove signup');
     } finally {
       setBusy(false);
     }
@@ -490,8 +535,9 @@ export default function EventDetailPage() {
                     <p className="m-0 text-sm text-ds-muted">None picked yet.</p>
                   ) : (
                     <div className="flex flex-wrap gap-2">
-                      {mySignup.timeslots.map((t) => (
-                        <span key={t.id} className="chip chip-accent">
+                      {rankTimeslots(mySignup.timeslots, mySignup.timeslotPreference).map((t, index, ranked) => (
+                        <span key={t.id} className={`chip ${index === 0 ? 'chip-accent' : ''}`}>
+                          {ranked.length > 1 && `${ordinal(index + 1)} `}
                           {formatSlot(t.startsAt)}
                         </span>
                       ))}
@@ -553,16 +599,16 @@ export default function EventDetailPage() {
         <div className={`flex min-w-0 flex-col gap-5 ${showSignupPanel ? 'flex-[2_1_320px]' : 'flex-[1_1_100%]'}`}>
           {forecastSection}
 
-          <section aria-labelledby="list-title" className="cut bg-ds-panel pb-1.5 pt-5">
+          <section id="signups" aria-labelledby="list-title" className="cut scroll-mt-4 bg-ds-panel pb-1.5 pt-5">
             <div className="flex items-center justify-between gap-2 px-5 pb-3">
               <h2 id="list-title" className="h2">
                 Signed up
               </h2>
               <span className="chip chip-sm">
-                {activeSignups.length} driver{activeSignups.length === 1 ? '' : 's'}
+                {signedUpCount} driver{signedUpCount === 1 ? '' : 's'}
               </span>
             </div>
-            {activeSignups.length === 0 ? (
+            {signedUpCount === 0 ? (
               <p className="m-0 border-t border-ds-line px-5 py-4 text-sm text-ds-muted">No one has signed up yet.</p>
             ) : (
               activeSignups.map((signup) => {
@@ -589,39 +635,78 @@ export default function EventDetailPage() {
                         )}
                         {signup.timeslots.length === 0
                           ? 'No availability picked yet'
-                          : signup.timeslots.map((t) => formatClock(t.startsAt)).join(', ')}
+                          : <RankedStartTimes timeslots={signup.timeslots} preference={signup.timeslotPreference} />}
                       </span>
                     </span>
                     <span className="flex flex-wrap items-center gap-2">
                       <span className={`chip ${chip.className}`}>{chip.label}</span>
-                      {user?.role === 'ADMIN' && (
-                        <>
-                          <button
-                            onClick={() => {
-                              setError(null);
-                              setAdminEditing(signup);
-                            }}
-                            className="border-0 bg-transparent p-0 text-[11px] font-bold uppercase text-ds-muted transition-colors hover:text-ds-ink"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => void handleDeleteSignup(signup.id)}
-                            disabled={busy}
-                            className="border-0 bg-transparent p-0 text-[11px] font-bold uppercase text-ds-muted transition-colors hover:text-ds-danger disabled:opacity-40"
-                          >
-                            Delete
-                          </button>
-                        </>
+                      {canEditSignup(signup) && (
+                        <button
+                          onClick={() => {
+                            setError(null);
+                            setAdminEditing(signup);
+                          }}
+                          className="border-0 bg-transparent p-0 text-[11px] font-bold uppercase text-ds-muted transition-colors hover:text-ds-ink"
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button
+                          onClick={() => void handleDeleteSignup(signup.id)}
+                          disabled={busy}
+                          className="border-0 bg-transparent p-0 text-[11px] font-bold uppercase text-ds-muted transition-colors hover:text-ds-danger disabled:opacity-40"
+                        >
+                          Delete
+                        </button>
                       )}
                     </span>
                   </div>
                 );
               })
             )}
+            {guestSignups.map((guest) => (
+              <div
+                key={guest.id}
+                className="row-hover flex flex-wrap items-center gap-3 border-t border-ds-line px-5 py-3"
+              >
+                <span className="cut-xs flex h-[34px] w-[34px] flex-none items-center justify-center bg-ds-control text-[13px] font-black italic text-ds-ink">
+                  {initials(guest.driverName)}
+                </span>
+                <span className="flex min-w-0 flex-[1_1_160px] flex-col">
+                  <span className="text-sm font-bold text-ds-ink">{guest.driverName}</span>
+                  <span className="text-xs text-ds-muted">
+                    {guest.carClass && `${guest.carClass} · `}
+                    {guest.timeslotIds.length === 0 ? (
+                      'No availability picked yet'
+                    ) : (
+                      <RankedStartTimes
+                        timeslots={guestSlots(guest, event.timeslots)}
+                        preference={guest.timeslotPreference}
+                      />
+                    )}
+                  </span>
+                </span>
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="chip">Guest</span>
+                  {user?.role === 'ADMIN' && (
+                    <button
+                      onClick={() => void handleRemoveGuest(guest.driverProfileId, guest.driverName)}
+                      disabled={busy}
+                      aria-label={`Remove ${guest.driverName}`}
+                      className="border-0 bg-transparent p-0 text-[11px] font-bold uppercase text-ds-muted transition-colors hover:text-ds-danger disabled:opacity-40"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </span>
+              </div>
+            ))}
           </section>
         </div>
       </div>
+
+      {isReadinessPhase(event.status) && <ReadinessPanel eventId={event.id} />}
 
       <section aria-labelledby="av-title" className="cut flex flex-col gap-4 bg-ds-panel px-6 py-[22px]">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -681,6 +766,11 @@ export default function EventDetailPage() {
           {error && (
             <p role="alert" className="mb-3 text-sm text-ds-danger">
               {error}
+            </p>
+          )}
+          {!isAdmin && (
+            <p className="mb-3 text-[13px] text-ds-muted">
+              As a team lead you can change this driver's start times and availability. Car and class changes need an admin.
             </p>
           )}
           <SignupForm

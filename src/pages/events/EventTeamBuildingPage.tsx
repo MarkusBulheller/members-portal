@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import EventTeamsPanel from '../../components/EventTeamsPanel';
 import HourlyAvailabilityGrid, { type AvailabilityGridRow } from '../../components/HourlyAvailabilityGrid';
 import Modal from '../../components/Modal';
+import RankedStartTimes from '../../components/RankedStartTimes';
+import ReadinessTag from '../../components/ReadinessTag';
 import SignupForm from '../../components/SignupForm';
 import { useConfirm } from '../../context/ConfirmContext';
 import { ApiError } from '../../lib/api';
@@ -12,6 +14,10 @@ import { eventsApi } from '../../lib/api/events';
 import { eventTeamsApi } from '../../lib/api/eventTeams';
 import { iracingTeamsApi } from '../../lib/api/iracingTeams';
 import { formatClock, formatDayShort, formatSlot } from '../../lib/eventFormatting';
+import { guestSlots } from '../../lib/guestSignups';
+import { readinessSummaryLabel } from '../../lib/readiness';
+import { isReadinessPhase } from '../../lib/readiness';
+import { useReadiness } from '../../lib/useReadiness';
 import { formValuesToSignupInput, signupToFormValues, type SignupFormValues } from '../../lib/signupFormValues';
 import type { Car } from '../../types/car';
 import type { EventSignup, EventTimeslot, RaceEventDetail } from '../../types/event';
@@ -61,6 +67,14 @@ function EventTeamBuilding({ id }: { id: string | undefined }) {
   const [cars, setCars] = useState<Car[]>([]);
   const [teams, setTeams] = useState<EventTeam[]>([]);
   const [iracingTeams, setIracingTeams] = useState<IracingTeam[]>([]);
+  // Whole-event readiness for the header tag; refetched (debounced) whenever the teams change.
+  const [readinessKey, setReadinessKey] = useState(0);
+  useEffect(() => {
+    const timer = setTimeout(() => setReadinessKey((n) => n + 1), 1_000);
+    return () => clearTimeout(timer);
+  }, [teams, event]);
+  const readinessActive = isReadinessPhase(event?.status);
+  const readiness = useReadiness(id, { refreshKey: readinessKey, enabled: readinessActive });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** The signup being edited in the modal on a driver's behalf. */
@@ -150,8 +164,10 @@ function EventTeamBuilding({ id }: { id: string | undefined }) {
         if (!cancelled) setCars(list);
       })
       .catch(() => {});
+    // Includes inactive teams so a crew already linked to one still shows its name and roster; the
+    // panel filters inactive teams out of the picker itself.
     iracingTeamsApi
-      .list()
+      .list({ includeInactive: true })
       .then((list) => {
         if (!cancelled) setIracingTeams(list);
       })
@@ -162,6 +178,9 @@ function EventTeamBuilding({ id }: { id: string | undefined }) {
   }, []);
 
   const activeSignups = useMemo(() => event?.signups.filter((s) => s.status !== 'CANCELLED') ?? [], [event]);
+  /** Guest drivers (no portal account) who signed up through Discord. */
+  const guestSignups = useMemo(() => event?.guestSignups?.filter((g) => g.status !== 'CANCELLED') ?? [], [event]);
+  const signedUpCount = activeSignups.length + guestSignups.length;
   const carNames = useMemo(() => Object.fromEntries(cars.map((c) => [c.id, c.name])), [cars]);
 
   /** Grid cell colour for a driver: their team's colour; drivers not on a team use the first-team
@@ -284,6 +303,21 @@ function EventTeamBuilding({ id }: { id: string | undefined }) {
     }
   }
 
+  async function handleRemoveGuest(driverProfileId: string, name: string) {
+    if (!id) return;
+    if (!(await confirm(`Remove ${name} from this event's signups?`, { confirmLabel: 'Remove' }))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await eventsApi.cancelGuestSignup(id, driverProfileId);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to remove signup');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!event) {
     return (
       <p className="text-ds-muted text-sm">
@@ -330,9 +364,19 @@ function EventTeamBuilding({ id }: { id: string | undefined }) {
           <h1 className="m-0 text-[34px] font-extrabold leading-[1.1]">{event.title}</h1>
           <span className="text-sm text-ds-muted">
             {statusNote} · {event.track.name} · {event.carClasses.join(' / ')} ·{' '}
-            {formatRaceLength(event.raceLengthMinutes)} · {activeSignups.length}{' '}
-            {activeSignups.length === 1 ? 'driver' : 'drivers'} signed up
+            {formatRaceLength(event.raceLengthMinutes)} · {signedUpCount}{' '}
+            {signedUpCount === 1 ? 'driver' : 'drivers'} signed up
           </span>
+          {readinessActive && readiness.data && (
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <ReadinessTag
+                summary={readiness.data.summary}
+                eventId={event.id}
+                to={`/events/${event.id}#readiness`}
+                label={readinessSummaryLabel(readiness.data.summary)}
+              />
+            </div>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {event.status === 'SIGNUPS_CLOSED' && (
@@ -362,6 +406,7 @@ function EventTeamBuilding({ id }: { id: string | undefined }) {
         driverNames={driverNames}
         driverIracingCustIds={driverIracingCustIds}
         signups={activeSignups}
+        guestSignups={guestSignups}
         isIracing={event.sim === 'IRACING'}
         rosterMembers={rosterMembers}
         rosterGuests={rosterGuests}
@@ -435,9 +480,9 @@ function EventTeamBuilding({ id }: { id: string | undefined }) {
           <h2 id="signed-up" className="h2">
             Signed up
           </h2>
-          <span className="chip chip-sm num">{activeSignups.length}</span>
+          <span className="chip chip-sm num">{signedUpCount}</span>
         </div>
-        {activeSignups.length === 0 ? (
+        {signedUpCount === 0 ? (
           <p className="m-0 border-t border-ds-line px-5 py-4 text-ds-muted">No one signed up for this event.</p>
         ) : (
           <div>
@@ -458,7 +503,7 @@ function EventTeamBuilding({ id }: { id: string | undefined }) {
                   <p className="m-0 mt-0.5 text-xs text-ds-muted">
                     {signup.timeslots.length === 0
                       ? 'No availability picked'
-                      : signup.timeslots.map((t) => formatSlot(t.startsAt)).join(' · ')}
+                      : <RankedStartTimes timeslots={signup.timeslots} preference={signup.timeslotPreference} format={formatSlot} separator=' · ' />}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
@@ -480,6 +525,40 @@ function EventTeamBuilding({ id }: { id: string | undefined }) {
                     className="btn-danger btn-sm"
                   >
                     Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+            {guestSignups.map((guest) => (
+              <div
+                key={guest.id}
+                className="row-hover flex flex-col gap-2 border-t border-ds-line px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <span className="font-bold">{guest.driverName}</span>
+                  {guest.carClass && <span className="ml-2 text-xs text-ds-muted">{guest.carClass}</span>}
+                  <p className="m-0 mt-0.5 text-xs text-ds-muted">
+                    {guest.timeslotIds.length === 0 ? (
+                      'No availability picked'
+                    ) : (
+                      <RankedStartTimes
+                        timeslots={guestSlots(guest, event.timeslots)}
+                        preference={guest.timeslotPreference}
+                        format={formatSlot}
+                        separator=" · "
+                      />
+                    )}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                  <span className="chip chip-sm">Guest</span>
+                  <button
+                    onClick={() => void handleRemoveGuest(guest.driverProfileId, guest.driverName)}
+                    disabled={busy}
+                    aria-label={`Remove ${guest.driverName}`}
+                    className="btn-danger btn-sm"
+                  >
+                    Remove
                   </button>
                 </div>
               </div>

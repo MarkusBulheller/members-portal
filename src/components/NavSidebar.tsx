@@ -79,7 +79,7 @@ export default function NavSidebar({
   return (
     <aside
       id="member-sidebar"
-      className="fixed inset-y-0 left-0 z-30 hidden w-[260px] flex-col bg-ds-sidebar border-r border-ds-edge box-border px-3 py-[22px] md:flex"
+      className="fixed inset-y-0 left-0 z-30 hidden w-[260px] flex-col bg-ds-sidebar border-r border-ds-edge box-border px-3 py-[22px] md:flex print:hidden"
     >
       <Link to="/dashboard" className="shrink-0 flex items-center gap-2.5 px-3 pb-5 text-ds-ink">
         <span className="font-logo font-black text-[22px] tracking-[0.14em]">

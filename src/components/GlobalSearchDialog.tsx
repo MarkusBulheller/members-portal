@@ -93,7 +93,7 @@ export default function GlobalSearchDialog({ onClose }: { onClose: () => void })
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/70 p-3 sm:px-4 sm:pt-[10vh]"
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/70 p-3 sm:px-4 sm:pt-[10vh] print:hidden"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

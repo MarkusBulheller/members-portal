@@ -117,7 +117,10 @@ export async function completeIracingTrackSync(code: string, state: string): Pro
   return api.post('/iracing/tracks/sync', { code, codeVerifier: verifier });
 }
 
-export async function completeIracingSeriesSync(code: string, state: string): Promise<{ synced: number }> {
+export async function completeIracingSeriesSync(
+  code: string,
+  state: string,
+): Promise<{ synced: number; failed?: number; failedSeries?: { seriesId: number; name: string }[] }> {
   const verifier = consumePkceState(state);
   return api.post('/iracing/series/sync', { code, codeVerifier: verifier });
 }

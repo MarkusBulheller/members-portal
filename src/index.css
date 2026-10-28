@@ -331,3 +331,50 @@ body {
 
 /* Light warn tag: the board's rgba(245,176,65,.2) over the card, not 14% of the (darker) light warn ink. */
 :root[data-theme="light"] .chip-warn { background: rgba(245, 176, 65, 0.2); }
+
+/* ---- Pit-wall sheet (printable stint plan, components/PitWallSheet.tsx) ----
+   The sheet is always in the DOM of the team plan page, `hidden` on screen. For printing, the app
+   shell pieces carry Tailwind `print:hidden` (sidebar, mobile bars, search/modal roots, the plan
+   page's normal content) and the shell's main/padding wrappers drop their margins, so the sheet is
+   the only thing on paper. These rules force a plain white page and name the A4 landscape page. */
+@page pitwall {
+  size: A4 landscape;
+  margin: 10mm;
+}
+.pitwall { page: pitwall; }
+@media print {
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+  .pitwall {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* ---- OBS overlay (pages/public/RaceOverlayPage.tsx) ----
+   The overlay route adds .overlay-mode to <html> and <body> (and removes it on unmount): fully
+   transparent so OBS composites it over the video, and no scrollbars. */
+html.overlay-mode,
+html.overlay-mode body,
+body.overlay-mode {
+  background: transparent !important;
+  overflow: hidden !important;
+}
+.overlay-mode #root {
+  background: transparent;
+}
+.overlay-mode ::-webkit-scrollbar {
+  display: none;
+}
+@keyframes ov-fade {
+  from { opacity: 0; transform: translateY(0.12em); }
+  to { opacity: 1; transform: none; }
+}
+.overlay-mode .ov-fade { animation: ov-fade 0.45s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .overlay-mode .ov-fade { animation: none; }
+}

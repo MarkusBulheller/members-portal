@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { buildForecastTiles } from '../lib/weatherForecastTiles';
 import type { WeatherForecastPoint } from '../types/iracingWeatherForecast';
 
@@ -24,18 +25,24 @@ export default function HourlyForecastBars({ points }: { points: WeatherForecast
         <p className="m-0 text-sm text-ds-muted">No forecast data.</p>
       ) : (
         <div className="overflow-x-auto">
-          <div style={{ minWidth: hours.length * 30 }}>
+          {/* Phones fit all hours in the width (labels thinned out); sm up keeps 30px per hour. */}
+          <div
+            className="max-sm:px-2 sm:min-w-[var(--forecast-min)]"
+            style={{ '--forecast-min': `${hours.length * 30}px` } as CSSProperties}
+          >
             <div
               role="img"
               aria-label={`Hourly forecast: ${hours
                 .map((h) => `${h.simTime ?? h.hourLabel} ${h.temperatureC} degrees, ${h.rainPercent}% rain`)
                 .join('; ')}`}
-              className="grid h-[90px] items-end gap-1 shadow-[inset_0_-1px_0_var(--color-ds-line)]"
+              className="grid h-[90px] items-end gap-0.5 shadow-[inset_0_-1px_0_var(--color-ds-line)] sm:gap-1"
               style={{ gridTemplateColumns: `repeat(${hours.length}, minmax(0, 1fr))` }}
             >
-              {hours.map((h) => (
+              {hours.map((h, i) => (
                 <div key={`${h.simTime ?? h.hourLabel}`} className="flex h-full flex-col items-center justify-end gap-1">
-                  <span className="text-[11px] font-semibold tabular-nums text-ds-ink-soft">
+                  <span
+                    className={`whitespace-nowrap text-[11px] font-semibold tabular-nums text-ds-ink-soft ${i % 3 === 1 ? '' : 'max-sm:invisible'}`}
+                  >
                     {h.temperatureC}°
                   </span>
                   <span
@@ -52,11 +59,16 @@ export default function HourlyForecastBars({ points }: { points: WeatherForecast
             </div>
             <div
               aria-hidden="true"
-              className="mt-1 grid gap-1 text-center text-[11px] font-semibold tabular-nums text-ds-dim"
+              className="mt-1 grid gap-0.5 text-[11px] font-semibold tabular-nums text-ds-dim sm:gap-1"
               style={{ gridTemplateColumns: `repeat(${hours.length}, minmax(0, 1fr))` }}
             >
-              {hours.map((h) => (
-                <span key={`${h.simTime ?? h.hourLabel}`}>{h.simTime ? h.simTime.slice(0, 2) : h.hourLabel}</span>
+              {hours.map((h, i) => (
+                <span
+                  key={`${h.simTime ?? h.hourLabel}`}
+                  className={`flex justify-center whitespace-nowrap ${i % 3 === 1 ? '' : 'max-sm:invisible'}`}
+                >
+                  {h.simTime ? h.simTime.slice(0, 2) : h.hourLabel}
+                </span>
               ))}
             </div>
           </div>

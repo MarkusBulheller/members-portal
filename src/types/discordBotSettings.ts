@@ -1,6 +1,12 @@
 export interface DiscordBotSettings {
   hasToken: boolean;
   eventsChannelId: string | null;
+  /** Channel where automatically/manually imported race results are announced. */
+  resultsChannelId: string | null;
+  /** Whether the Discord application's public key is stored — never the key itself. */
+  publicKeySet: boolean;
+  /** Discord user id that gets a DM when someone who isn't linked tries to sign up. */
+  alertUserId: string | null;
 }
 
 export interface UpdateDiscordBotSettingsInput {
@@ -8,6 +14,12 @@ export interface UpdateDiscordBotSettingsInput {
   botToken?: string;
   /** Empty string explicitly clears it; omitted leaves it untouched. */
   eventsChannelId?: string;
+  /** Empty string explicitly clears it; omitted leaves it untouched. */
+  resultsChannelId?: string;
+  /** 64 hex chars; blank/omitted leaves the stored key untouched. */
+  publicKey?: string;
+  /** Empty string clears it; omitted leaves it untouched. */
+  alertUserId?: string;
 }
 
 /** Live check against Discord's own API — see GET .../status. Any *boolean|null* field is null

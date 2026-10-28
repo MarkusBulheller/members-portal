@@ -1,5 +1,6 @@
 import { memo, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import CountryFlag from '../../components/CountryFlag';
 import { useAuth } from '../../context/AuthContext';
 import { resolveAssetUrl } from '../../lib/api';
 import { driversApi } from '../../lib/api/drivers';
@@ -17,11 +18,6 @@ const driverName = (d: DriverProfile) => d.iracingName ?? d.displayName;
  * re-renders the cards whose driver / "is me" actually changed, and the timezone label is computed
  * once per driver rather than on every render. */
 const DriverCard = memo(function DriverCard({ driver, isMe }: { driver: DriverProfile; isMe: boolean }) {
-  const tags = [
-    driver.startingDriver && { label: 'Start', title: 'Starting driver' },
-    driver.wetDriver && { label: 'Wet', title: 'Wet driver' },
-    driver.nightDriver && { label: 'Night', title: 'Night driver' },
-  ].filter((t): t is { label: string; title: string } => Boolean(t));
   const meta = [driver.iracingLocation ?? driver.country, driver.preferredClasses].filter(Boolean).join(' · ');
   const achievements = driver.awardCount ?? driver.awards?.length ?? 0;
   const timezoneLabel = useMemo(() => formatTimezoneLabel(driver.timezone), [driver.timezone]);
@@ -30,7 +26,7 @@ const DriverCard = memo(function DriverCard({ driver, isMe }: { driver: DriverPr
       to={`/drivers/${driver.id}`}
       className="cut row-hover flex flex-col gap-3.5 bg-ds-panel px-[18px] pb-3.5 pt-4 text-ds-ink"
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-start gap-3">
         {driver.avatarUrl ? (
           <img
             src={resolveAssetUrl(driver.avatarUrl)}
@@ -51,46 +47,39 @@ const DriverCard = memo(function DriverCard({ driver, isMe }: { driver: DriverPr
           </span>
         )}
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="flex items-center gap-2 font-bold">
-            {driver.iracingCountryCode && (
-              <span className="text-[11px] font-bold text-ds-dim">{driver.iracingCountryCode}</span>
-            )}
-            <span className="truncate">{driverName(driver)}</span>
+          <span className="flex items-center gap-1.5 font-bold leading-tight">
+            <CountryFlag countryCode={driver.iracingCountryCode} className="shrink-0 text-[14px]" />
+            <span className="min-w-0 truncate" title={driverName(driver)}>
+              {driverName(driver)}
+            </span>
           </span>
-          <span className="truncate text-xs text-ds-muted">{meta || 'No details set'}</span>
-        </span>
-        <span className={`chip chip-sm ${driver.userId ? 'chip-accent' : ''}`}>
-          {driver.userId ? 'Member' : 'Guest'}
+          <span className="mt-0.5 truncate text-xs text-ds-muted">{meta || 'No details set'}</span>
         </span>
       </div>
 
-      <div className="flex items-center justify-between gap-2.5">
-        <div className="flex items-center gap-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-2">
+        <div className="flex shrink-0 items-center gap-2.5">
           {driver.sportsCarSafetyRating && (
             <span
-              className="slant num px-3 py-0.5 text-sm"
+              className="slant num shrink-0 whitespace-nowrap px-3 py-0.5 text-sm"
               style={licenseClassStyle(driver.sportsCarSafetyRating)}
             >
               {driver.sportsCarSafetyRating}
             </span>
           )}
           {driver.sportsCarIrating !== null && (
-            <span className="flex items-baseline gap-1">
+            <span className="flex shrink-0 items-baseline gap-1 whitespace-nowrap">
               <span className="num text-xl leading-none">{driver.sportsCarIrating.toLocaleString('en-US')}</span>
               <span className="text-xs font-bold text-ds-muted">iR</span>
             </span>
           )}
         </div>
-        <div className="flex gap-1">
-          {tags.map((t) => (
-            <span key={t.label} title={t.title} className="chip chip-sm">
-              {t.label}
-            </span>
-          ))}
-        </div>
+        <span className={`chip chip-sm shrink-0 ${driver.userId ? 'chip-accent' : ''}`}>
+          {driver.userId ? 'Member' : 'Guest'}
+        </span>
       </div>
 
-      <div className="flex items-center justify-between gap-2 border-t border-ds-line pt-2.5 text-xs text-ds-muted">
+      <div className="mt-auto flex items-center justify-between gap-2 border-t border-ds-line pt-2.5 text-xs text-ds-muted">
         <span>
           {achievements === 0
             ? 'No achievements yet'

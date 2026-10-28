@@ -10,6 +10,13 @@ import type { CreateManualDriverInput, IracingDriverCandidate } from '../../type
 
 const EMPTY: CreateManualDriverInput = { displayName: '' };
 
+/** Discord's username format after normalising (trim, drop a leading @, lower-case) — same rule as the backend. */
+const DISCORD_USERNAME_PATTERN = /^[a-z0-9_.]{2,32}$/;
+
+function normalizeDiscordUsername(value: string): string {
+  return value.trim().replace(/^@/, '').toLowerCase();
+}
+
 export default function DriverFormPage() {
   const { id } = useParams<{ id: string }>();
   const isEdit = Boolean(id);
@@ -42,6 +49,7 @@ export default function DriverFormPage() {
         preferredClasses: driver.preferredClasses ?? undefined,
         timezone: driver.timezone ?? undefined,
         bio: driver.bio ?? undefined,
+        discordUsername: driver.discordUsername ?? undefined,
         maxSuccessiveStints: driver.maxSuccessiveStints ?? undefined,
         startingDriver: driver.startingDriver,
         wetDriver: driver.wetDriver,
@@ -104,11 +112,17 @@ export default function DriverFormPage() {
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const discordUsername = normalizeDiscordUsername(form.discordUsername ?? '');
+    if (discordUsername !== '' && !DISCORD_USERNAME_PATTERN.test(discordUsername)) {
+      setError('The Discord username must be 2-32 characters: letters, digits, "_" or "." (no spaces).');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       const input: CreateManualDriverInput = {
         ...form,
+        discordUsername: discordUsername || undefined,
         ...(candidate && {
           iracingCustId: candidate.custId,
           iracingName: candidate.name,
@@ -127,6 +141,7 @@ export default function DriverFormPage() {
           preferredClasses: form.preferredClasses,
           timezone: form.timezone ?? null,
           bio: form.bio,
+          discordUsername: discordUsername || null,
           maxSuccessiveStints: form.maxSuccessiveStints ?? null,
           startingDriver: form.startingDriver,
           wetDriver: form.wetDriver,
@@ -370,6 +385,24 @@ export default function DriverFormPage() {
                   />
                 </div>
               </div>
+              <label className="flex flex-col gap-1.5">
+                <span className="lbl">Discord username</span>
+                <input
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  maxLength={33}
+                  value={form.discordUsername ?? ''}
+                  onChange={(e) => setForm({ ...form, discordUsername: e.target.value.replace(/\s/g, '') })}
+                  placeholder="e.g. delta2611"
+                  aria-describedby="discord-username-hint"
+                  className="input min-h-11 px-3.5"
+                />
+                <span id="discord-username-hint" className="text-xs text-ds-muted">
+                  Their Discord username, e.g. delta2611 (no @). It's the handle shown in their Discord profile — not
+                  their display name.
+                </span>
+              </label>
               <label className="flex flex-col gap-1.5">
                 <span className="lbl">Bio</span>
                 <textarea

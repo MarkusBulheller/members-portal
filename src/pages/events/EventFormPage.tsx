@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import DateTimeField from '../../components/DateTimeField';
 import TrackAutocomplete from '../../components/TrackAutocomplete';
 import { eventsApi } from '../../lib/api/events';
 import { formatDayShort } from '../../lib/eventFormatting';
@@ -138,6 +139,7 @@ export default function EventFormPage() {
         tyreLimit: event.tyreLimit ?? null,
         iracingSeasonId: event.iracingSeasonId,
         iracingRaceWeekNum: event.iracingRaceWeekNum,
+        minDriversPerTeam: event.minDriversPerTeam ?? null,
       });
       setEventLoaded(true);
     });
@@ -170,6 +172,8 @@ export default function EventFormPage() {
         endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : undefined,
         signupDeadline: form.signupDeadline ? new Date(form.signupDeadline).toISOString() : isEdit ? null : undefined,
         timeslots: timeslots.map((t) => new Date(t).toISOString()),
+        // Empty = the default (4): cleared on edit, simply left out on create.
+        minDriversPerTeam: form.minDriversPerTeam ?? (isEdit ? null : undefined),
       };
       const saved = isEdit && id ? await eventsApi.update(id, payload) : await eventsApi.create(payload);
       navigate(`/events/${saved.id}`);
@@ -370,6 +374,21 @@ export default function EventFormPage() {
                 </span>
               </Field>
             )}
+            <Field label="Drivers needed per team" className="max-w-[260px]">
+              <input
+                type="number"
+                min={1}
+                max={20}
+                step={1}
+                placeholder="4"
+                value={form.minDriversPerTeam ?? ''}
+                onChange={(e) =>
+                  setForm({ ...form, minDriversPerTeam: e.target.value === '' ? null : Number(e.target.value) })
+                }
+                className="input"
+              />
+              <span className="text-xs text-ds-muted">The readiness check warns when a team has fewer drivers.</span>
+            </Field>
             <Field label="Description">
               <textarea
                 rows={3}
@@ -391,20 +410,16 @@ export default function EventFormPage() {
             </div>
             <div className="grid grid-cols-[repeat(auto-fit,minmax(min(240px,100%),1fr))] gap-4">
               <Field label="Main start">
-                <input
+                <DateTimeField
                   required
-                  type="datetime-local"
                   value={form.startsAt}
-                  onChange={(e) => setForm({ ...form, startsAt: e.target.value })}
-                  className="input"
+                  onChange={(value) => setForm({ ...form, startsAt: value })}
                 />
               </Field>
               <Field label="Signups close">
-                <input
-                  type="datetime-local"
+                <DateTimeField
                   value={form.signupDeadline ?? ''}
-                  onChange={(e) => setForm({ ...form, signupDeadline: e.target.value || undefined })}
-                  className="input"
+                  onChange={(value) => setForm({ ...form, signupDeadline: value || undefined })}
                 />
               </Field>
             </div>
@@ -412,16 +427,15 @@ export default function EventFormPage() {
               <span className="lbl">Timeslot options</span>
               {form.timeslots.map((slot, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <input
-                    type="datetime-local"
+                  <DateTimeField
                     aria-label={`Timeslot ${i + 1}`}
                     value={slot}
-                    onChange={(e) => {
+                    onChange={(value) => {
                       const timeslots = [...form.timeslots];
-                      timeslots[i] = e.target.value;
+                      timeslots[i] = value;
                       setForm({ ...form, timeslots });
                     }}
-                    className="input min-w-0 max-w-xs flex-1"
+                    className="max-w-xs flex-1"
                   />
                   <button
                     type="button"

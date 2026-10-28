@@ -16,6 +16,21 @@ export interface LivePlanMessage {
 
 export type LiveConnection = 'connecting' | 'live' | 'reconnecting';
 
+/** One person currently viewing the plan (server-side `presence` SSE event; one entry per user
+ * however many tabs they have open). `avatarUrl` is the stored path — run it through resolveAssetUrl. */
+export interface PresenceUser {
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+  isAdmin: boolean;
+}
+
+export interface LivePlanState {
+  connection: LiveConnection;
+  /** Who has this plan open right now, in server order (join order). Empty while not connected. */
+  presence: PresenceUser[];
+}
+
 /** A burst of changes (a plan being generated is dozens of writes) collapses into one callback: it
  * fires this long after the LAST message of the burst (a real trailing debounce)... */
 const DEBOUNCE_MS = 250;
@@ -55,6 +70,33 @@ function parseMessage(raw: unknown): LivePlanMessage | null {
   }
 }
 
+/** Parses a `presence` event body: a JSON array of users. Returns null for anything that isn't one
+ * (so the previous list is kept); entries that don't have the expected shape are skipped. */
+function parsePresence(raw: unknown): PresenceUser[] | null {
+  if (typeof raw !== 'string') return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!Array.isArray(value)) return null;
+    const users: PresenceUser[] = [];
+    for (const item of value as unknown[]) {
+      if (typeof item !== 'object' || item === null) continue;
+      const u = item as Partial<Record<keyof PresenceUser, unknown>>;
+      if (typeof u.userId !== 'string' || !u.userId || typeof u.name !== 'string') continue;
+      users.push({
+        userId: u.userId,
+        name: u.name,
+        avatarUrl: typeof u.avatarUrl === 'string' && u.avatarUrl ? u.avatarUrl : null,
+        isAdmin: u.isAdmin === true,
+      });
+    }
+    return users;
+  } catch {
+    return null;
+  }
+}
+
+const EMPTY_PRESENCE: PresenceUser[] = [];
+
 /**
  * Keeps a team's stint-plan page in sync with other people's edits. Opens a Server-Sent Events
  * stream and calls `onChange` (trailing debounce with a max wait, coalescing bursts) with the
@@ -67,13 +109,18 @@ function parseMessage(raw: unknown): LivePlanMessage | null {
  * exponential backoff plus jitter. A watchdog reconnects a stream that has gone silent (no message
  * or `heartbeat` for 60s) even though the browser still calls it open. `onChange` may change
  * identity every render — the latest one is always used.
+ *
+ * Same hook, but also exposes who else has the page open (the stream's named `presence` event).
+ * Presence never triggers `onChange`; it only counts as proof of life for the watchdog, and is
+ * cleared whenever the stream drops.
  */
-export function useLivePlan(
+export function useLivePlanState(
   eventId: string | undefined,
   teamId: string | undefined,
   onChange: (messages: LivePlanMessage[]) => void,
-): LiveConnection {
+): LivePlanState {
   const [connection, setConnection] = useState<LiveConnection>('connecting');
+  const [presence, setPresence] = useState<PresenceUser[]>(EMPTY_PRESENCE);
   const onChangeRef = useRef(onChange);
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -131,6 +178,8 @@ export function useLivePlan(
     const retryDelay = () =>
       Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** Math.min(failures, 6)) + Math.random() * RETRY_JITTER_MS;
 
+    const clearPresence = () => setPresence((prev) => (prev.length === 0 ? prev : EMPTY_PRESENCE));
+
     const closeSource = () => {
       if (source) {
         source.onopen = null;
@@ -146,6 +195,7 @@ export function useLivePlan(
       if (disposed) return;
       if (typeof EventSource === 'undefined') {
         setConnection('reconnecting');
+        clearPresence();
         startPolling();
         return;
       }
@@ -172,9 +222,17 @@ export function useLivePlan(
       es.addEventListener('heartbeat', () => {
         lastActivityAt = Date.now();
       });
+      // Also a NAMED event, so onChange is untouched; it is proof of life like the heartbeat.
+      es.addEventListener('presence', (e) => {
+        lastActivityAt = Date.now();
+        const next = parsePresence((e as MessageEvent).data);
+        if (!next) return; // malformed: keep what we had
+        setPresence((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+      });
       es.onerror = () => {
         failures += 1;
         setConnection('reconnecting');
+        clearPresence();
         if (failures >= POLL_AFTER_ERRORS) startPolling();
         if (es.readyState === EventSource.CLOSED) {
           // The browser won't retry a rejected connection (e.g. 401/404/proxy error) — do it ourselves.
@@ -190,6 +248,7 @@ export function useLivePlan(
       if (disposed) return;
       failures = Math.max(failures, 1);
       setConnection('reconnecting');
+      clearPresence();
       closeSource();
       if (retryTimer !== undefined) clearTimeout(retryTimer);
       retryTimer = setTimeout(connect, Math.random() * RETRY_JITTER_MS);
@@ -221,8 +280,18 @@ export function useLivePlan(
       if (watchdogTimer !== undefined) clearInterval(watchdogTimer);
       stopPolling();
       closeSource();
+      clearPresence();
     };
   }, [eventId, teamId]);
 
-  return connection;
+  return { connection, presence };
+}
+
+/** Backwards-compatible form of useLivePlanState: just the connection state. */
+export function useLivePlan(
+  eventId: string | undefined,
+  teamId: string | undefined,
+  onChange: (messages: LivePlanMessage[]) => void,
+): LiveConnection {
+  return useLivePlanState(eventId, teamId, onChange).connection;
 }

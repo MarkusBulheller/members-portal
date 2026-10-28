@@ -1,6 +1,7 @@
 import { Navigate, useParams } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import AchievementsAdminPage from './AchievementsAdminPage';
+import AutoImportAdminPage from './AutoImportAdminPage';
 import DiscordBotSettingsPage from './DiscordBotSettingsPage';
 import IracingTeamsPage from './IracingTeamsPage';
 import TeamHighlightsAdminPage from './TeamHighlightsAdminPage';
@@ -8,6 +9,7 @@ import TeamHighlightsAdminPage from './TeamHighlightsAdminPage';
 const TABS = [
   { slug: 'achievements', label: 'Achievements', Component: AchievementsAdminPage },
   { slug: 'iracing-teams', label: 'iRacing teams', Component: IracingTeamsPage },
+  { slug: 'auto-import', label: 'Auto-import', Component: AutoImportAdminPage },
   { slug: 'team-highlights', label: 'Team highlights', Component: TeamHighlightsAdminPage },
   { slug: 'discord-bot', label: 'Discord bot', Component: DiscordBotSettingsPage },
 ] as const;

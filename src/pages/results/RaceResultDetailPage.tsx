@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import RaceResultBody, { RaceResultHero } from '../../components/RaceResultBody';
 import { formatRaceDate } from '../../components/RaceResultRow';
+import PersonalRaceSummary from '../../components/PersonalRaceSummary';
 import RaceResultShareCard from '../../components/RaceResultShareCard';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -167,6 +168,19 @@ export default function RaceResultDetailPage() {
           </div>
         }
       />
+
+      {result.importedAt && (
+        <p className="m-0 -mt-2 text-[13px] text-ds-muted">
+          {result.importSource === 'AUTO'
+            ? 'Imported automatically'
+            : result.importSource === 'MANUAL'
+              ? 'Imported manually'
+              : 'Imported'}{' '}
+          · {formatRaceDate(result.importedAt)}
+        </p>
+      )}
+
+      <PersonalRaceSummary result={result} />
 
       {user?.role === 'ADMIN' && result.shareToken && (
         <section

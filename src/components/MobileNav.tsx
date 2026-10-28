@@ -261,7 +261,7 @@ export default function MobileNav({ badgeCounts, ownAvatarUrl }: Props) {
     }`;
 
   return (
-    <div className="md:hidden">
+    <div className="md:hidden print:hidden">
       <MobileHeader ownAvatarUrl={ownAvatarUrl} />
 
       <nav

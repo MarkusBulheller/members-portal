@@ -9,11 +9,18 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import type { AvailabilityGridRow } from '../../components/HourlyAvailabilityGrid';
+import PlanPresence from '../../components/PlanPresence';
+import PitWallSheet, { type PitWallDriver, type PitWallStint } from '../../components/PitWallSheet';
 import StintTimeline from '../../components/StintTimeline';
 import TeamPlanAvailabilityGrid from '../../components/TeamPlanAvailabilityGrid';
+import ReadinessTag from '../../components/ReadinessTag';
+import ShareLiveViewModal from '../../components/ShareLiveViewModal';
+import DiscordThreadButton from '../../components/DiscordThreadModal';
 import { useAuth } from '../../context/AuthContext';
+import { canManageTeam, isTeamLeadOnly } from '../../lib/teamAccess';
+import { useTeamLeadSet } from '../../lib/useTeamLeadSet';
 import { useConfirm } from '../../context/ConfirmContext';
 import { ApiError } from '../../lib/api';
 import { carsApi } from '../../lib/api/cars';
@@ -36,7 +43,9 @@ import {
   tyresUsed,
 } from '../../lib/tyres';
 import { formatCountdown, formatElapsed, liveClockSubline, outlineClassForDot, racePhase } from '../../lib/teamPlanClock';
-import { type LivePlanMessage, useLivePlan } from '../../lib/useLivePlan';
+import { type LivePlanMessage, useLivePlanState } from '../../lib/useLivePlan';
+import { isReadinessPhase } from '../../lib/readiness';
+import { useReadiness } from '../../lib/useReadiness';
 import type { CarDetail } from '../../types/car';
 import type { RaceEventDetail } from '../../types/event';
 import type { CreateEventTeamInput, EventTeam, EventTeamSettingsInput } from '../../types/eventTeam';
@@ -232,6 +241,26 @@ function formatMinutesSeconds(totalMinutes: number): string {
   const s = totalSeconds % 60;
   if (m === 0) return `${s}s`;
   return s === 0 ? `${m}m` : `${m}m ${s}s`;
+}
+
+/** A pit stop's total time as "m:ss" for the printed pit-wall sheet. */
+function formatStopClock(totalMinutes: number): string {
+  const totalSeconds = Math.round(totalMinutes * 60);
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`;
+}
+
+/** What happens in the stop before a stint, for the printed sheet: "Fuel + tyres", "Fuel + 2 tyres",
+ * "Fuel, no tyres", "Tyres" or (nothing configured to do) "Drive-through". The time itself comes
+ * from the row's own pitBeforeMinutes, so this never re-derives the cascade. */
+function pitStopLabel(stint: EventTeamStint, isLmu: boolean, refuelSeconds: number | null, tyreSeconds: number | null): string {
+  const refuels = (refuelSeconds ?? 0) > 0;
+  const tyresChanged = isLmu ? tyresChangedOf(stint) : stint.tyreChange ? 1 : 0;
+  const tyresText = isLmu ? `${tyresChanged} ${tyresChanged === 1 ? 'tyre' : 'tyres'}` : 'tyres';
+  const changesTyres = tyresChanged > 0 && (isLmu || (tyreSeconds ?? 0) > 0);
+  if (refuels && changesTyres) return `Fuel + ${tyresText}`;
+  if (refuels) return 'Fuel, no tyres';
+  if (changesTyres) return tyresText.charAt(0).toUpperCase() + tyresText.slice(1);
+  return 'Drive-through';
 }
 
 /** Every on-the-hour bucket (matching lib/eventFormatting's hoursForSlot — i.e. availableHours'
@@ -520,6 +549,7 @@ interface StintRowProps {
   isNext: boolean;
   color: DriverColor;
   driverLabel: string;
+  /** True when the viewer may edit this plan: an admin or a lead of the team (name kept for brevity). */
   isAdmin: boolean;
   busy: boolean;
   isLmu: boolean;
@@ -529,11 +559,25 @@ interface StintRowProps {
   driverNames: Record<string, string>;
   onStintChange: (stint: EventTeamStint, patch: StintPatch) => void;
   onStartNow: (stint: EventTeamStint) => void;
+  /** Start the stint that is running right now over, at this moment. */
+  onRestartNow: (stint: EventTeamStint) => void;
   onMove: (stint: EventTeamStint, direction: 'up' | 'down') => void;
   onDelete: (stint: EventTeamStint) => void;
   onSelectFocus: () => void;
   onSelectDone: () => void;
+  /** Drag and drop reordering (the arrows stay for touch and keyboard). `dropEdge` is where the
+   * dragged stint would land relative to this row while it hovers over it. */
+  canDrag: boolean;
+  canDrop: boolean;
+  dragging: boolean;
+  dropEdge: DropEdge | null;
+  onDragStartRow: (stintId: string) => void;
+  onDragOverRow: (stintId: string, edge: DropEdge) => void;
+  onDragEndRow: () => void;
+  onDropRow: (stintId: string, edge: DropEdge) => void;
 }
+
+type DropEdge = 'before' | 'after';
 
 /** One row of the strategy table. Memoised: with stable props (the page memoises the rows and
  * wraps every handler in useCallback), a clock tick only re-renders the rows whose active/locked
@@ -556,10 +600,19 @@ const StintRow = memo(function StintRow({
   driverNames,
   onStintChange,
   onStartNow,
+  onRestartNow,
   onMove,
   onDelete,
   onSelectFocus,
   onSelectDone,
+  canDrag,
+  canDrop,
+  dragging,
+  dropEdge,
+  onDragStartRow,
+  onDragOverRow,
+  onDragEndRow,
+  onDropRow,
 }: StintRowProps) {
   const { stint, startMs, startOffsetMinutes, durationMinutes, pitBeforeMinutes, estLaps, weatherPoint, isWetStint, availabilityWarning } =
     row;
@@ -572,10 +625,56 @@ const StintRow = memo(function StintRow({
 
   return (
     <tr
-      className={`row-hover border-t border-ds-line align-middle ${isActive ? 'bg-w2w-red/[0.12]' : ''} ${isLocked ? 'opacity-[0.55]' : ''}`}
+      onDragOver={(e) => {
+        if (!canDrop) return;
+        e.preventDefault();
+        const rect = e.currentTarget.getBoundingClientRect();
+        onDragOverRow(stint.id, e.clientY < rect.top + rect.height / 2 ? 'before' : 'after');
+      }}
+      onDrop={(e) => {
+        if (!canDrop || !dropEdge) return;
+        e.preventDefault();
+        onDropRow(stint.id, dropEdge);
+      }}
+      className={`row-hover border-t border-ds-line align-middle ${isActive ? 'bg-w2w-red/[0.12]' : ''} ${isLocked ? 'opacity-[0.55]' : ''} ${
+        dragging ? 'opacity-40' : ''
+      } ${
+        dropEdge === 'before'
+          ? 'border-t-2 [border-top-color:var(--color-w2w-red)]'
+          : dropEdge === 'after'
+            ? 'border-b-2 [border-bottom-color:var(--color-w2w-red)]'
+            : ''
+      }`}
     >
       <td className={`num py-2.5 pl-5 pr-3 text-base ${isActive ? 'shadow-[inset_3px_0_0_var(--color-w2w-red)]' : ''}`}>
-        {index + 1}
+        <span className="inline-flex items-center gap-1.5">
+          {canDrag && (
+            <span
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', stint.id);
+                const rowEl = e.currentTarget.closest('tr');
+                if (rowEl) e.dataTransfer.setDragImage(rowEl, 24, 18);
+                onDragStartRow(stint.id);
+              }}
+              onDragEnd={onDragEndRow}
+              title="Drag to move this stint"
+              aria-hidden="true"
+              className="-ml-3 inline-flex h-6 w-4 shrink-0 cursor-grab touch-none items-center justify-center text-ds-dim hover:text-ds-ink active:cursor-grabbing"
+            >
+              <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor">
+                <circle cx="2.5" cy="3" r="1.4" />
+                <circle cx="7.5" cy="3" r="1.4" />
+                <circle cx="2.5" cy="8" r="1.4" />
+                <circle cx="7.5" cy="8" r="1.4" />
+                <circle cx="2.5" cy="13" r="1.4" />
+                <circle cx="7.5" cy="13" r="1.4" />
+              </svg>
+            </span>
+          )}
+          {index + 1}
+        </span>
       </td>
       <td className="py-2.5 px-2">
         {isAdmin ? (
@@ -737,6 +836,17 @@ const StintRow = memo(function StintRow({
               className="btn-primary btn-sm mr-1 min-h-[34px]"
             >
               Start now
+            </button>
+          )}
+          {isAdmin && isActive && !isLocked && (
+            <button
+              type="button"
+              onClick={() => onRestartNow(stint)}
+              disabled={busy}
+              title="Start this stint over from this moment: the stints after it follow"
+              className="btn-primary btn-sm mr-1 min-h-[34px]"
+            >
+              Restart now
             </button>
           )}
           {isAdmin && stint.actualStartAt && !isLocked && (
@@ -1081,8 +1191,16 @@ export default function EventTeamPlanPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const confirm = useConfirm();
+  const [shareLiveOpen, setShareLiveOpen] = useState(false);
   const [event, setEvent] = useState<RaceEventDetail | null>(null);
   const [team, setTeam] = useState<EventTeam | null>(null);
+  // Admin, or a lead of THIS event crew: may edit the plan. The raw
+  // `isAdmin` stays for what only admins may do (car/timeslot/iRacing team, deleting the team, the
+  // event-wide fuel/tyre limits, the Discord thread, the Team building page).
+  const canManage = canManageTeam(user, team);
+  const isLeadOnly = isTeamLeadOnly(user, team);
+  // Admin picks the team lead from the crew's drivers (stored per event crew).
+  const teamLeadSet = useTeamLeadSet(id, team?.id, isAdmin);
   const [stints, setStints] = useState<EventTeamStint[]>([]);
   // The team's car, fetched once per car id: supplies the tank size, the per-track fuel/pit
   // defaults and the name shown in the header (so no separate cars-list request is needed).
@@ -1108,7 +1226,12 @@ export default function EventTeamPlanPage() {
   // guards the initial load itself, so a failed fetch shows a real message rather than leaving
   // the page stuck on "Loading..." forever with no explanation.
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'strategy' | 'availability' | 'settings'>('strategy');
+  // `?tab=settings|availability|strategy` (used by the readiness check's fix links) picks the first tab.
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<'strategy' | 'availability' | 'settings'>(() => {
+    const requested = searchParams.get('tab');
+    return requested === 'settings' || requested === 'availability' ? requested : 'strategy';
+  });
   const [driverSettings, setDriverSettings] = useState<EventTeamDriverSettings[]>([]);
   const [dummyDrivers, setDummyDrivers] = useState<EventTeamDummyDriver[]>([]);
   const [newDummyName, setNewDummyName] = useState('');
@@ -1442,11 +1565,26 @@ export default function EventTeamPlanPage() {
   //              signup/availability/pace change doesn't touch (a guest removal also emits 'stints')
   //   event   -> the event (and the team, whose timeslot may have changed)
   const busyRef = useRef(false);
+  // Readiness tag in the header: refetched (debounced ~1s) after saves and live-feed changes.
+  const [readinessKey, setReadinessKey] = useState(0);
+  const readinessTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const bumpReadiness = useCallback(() => {
+    clearTimeout(readinessTimerRef.current);
+    readinessTimerRef.current = setTimeout(() => setReadinessKey((n) => n + 1), 1_000);
+  }, []);
+  useEffect(() => () => clearTimeout(readinessTimerRef.current), []);
+  const readinessActive = isReadinessPhase(event?.status);
+  const readiness = useReadiness(id, { refreshKey: readinessKey, enabled: readinessActive });
+  const teamReadiness = readiness.data?.teams.find((t) => t.teamId === teamId);
   const lastBusyEndRef = useRef(0);
+  const wasBusyRef = useRef(false);
   useEffect(() => {
     busyRef.current = busy;
     if (!busy) lastBusyEndRef.current = Date.now();
-  }, [busy]);
+    // A finished save may have changed what the readiness check sees.
+    if (!busy && wasBusyRef.current) bumpReadiness();
+    wasBusyRef.current = busy;
+  }, [busy, bumpReadiness]);
   // A stint's driver <select> that's been focused but not yet changed may have its list open —
   // swapping its options/value under the user would be jarring, so a stint refresh waits for
   // change/blur (pending flag), then runs.
@@ -1489,6 +1627,7 @@ export default function EventTeamPlanPage() {
 
   const handleLiveChange = (messages: LivePlanMessage[]) => {
     if (!id || !teamId) return;
+    bumpReadiness();
     // An empty batch is a plain resync (reconnect / long-hidden tab came back / polling fallback).
     const fromOthers = messages.filter((m) => m.byUserId === null || m.byUserId !== user?.id);
     // Our own save already refetches what it changed — skip the echo when it only concerns that.
@@ -1517,7 +1656,7 @@ export default function EventTeamPlanPage() {
       loadDriverSettings();
     }
   };
-  const liveConnection = useLivePlan(id, teamId, handleLiveChange);
+  const { connection: liveConnection, presence } = useLivePlanState(id, teamId, handleLiveChange);
 
   /** Per-driver input remount key: the saved value, except while that input has focus. */
   const driverInputKey = (field: string, savedValue: string | null | undefined) =>
@@ -1726,7 +1865,7 @@ export default function EventTeamPlanPage() {
           await eventTeamDummyDriversApi.update(id, teamId, dummy.id, { availableHours: next });
           loadDummyDrivers();
         } else {
-          if (isAdmin) await eventsApi.updateSignupDetails(id, row.id, { availableHours: next });
+          if (canManage) await eventsApi.updateSignupDetails(id, row.id, { availableHours: next });
           else await eventsApi.signup(id, { availableHours: next });
           refreshEvent();
         }
@@ -1736,7 +1875,7 @@ export default function EventTeamPlanPage() {
         setBusy(false);
       }
     },
-    [id, teamId, dummyDrivers, isAdmin, loadDummyDrivers, refreshEvent],
+    [id, teamId, dummyDrivers, canManage, loadDummyDrivers, refreshEvent],
   );
   const onToggleAvailabilityHour = useCallback(
     (row: AvailabilityGridRow, hourIso: string, slotHours: string[]) =>
@@ -1744,12 +1883,12 @@ export default function EventTeamPlanPage() {
     [handleToggleAvailabilityHour],
   );
   const canEditAvailabilityRow = useCallback(
-    (row: AvailabilityGridRow) => isAdmin || row.driverId === user?.id,
-    [isAdmin, user?.id],
+    (row: AvailabilityGridRow) => canManage || row.driverId === user?.id,
+    [canManage, user?.id],
   );
   // Admins can edit anyone's hours; a member only their own, and only while the event can still
   // take availability changes (the backend allows PUBLISHED and SIGNUPS_CLOSED).
-  const canEditAnyAvailability = isAdmin || event?.status === 'PUBLISHED' || event?.status === 'SIGNUPS_CLOSED';
+  const canEditAnyAvailability = canManage || event?.status === 'PUBLISHED' || event?.status === 'SIGNUPS_CLOSED';
 
   const driverSettingsByUserId = useMemo(
     () => Object.fromEntries(driverSettings.map((s) => [s.userId, s])),
@@ -1950,7 +2089,7 @@ export default function EventTeamPlanPage() {
   useEffect(() => {
     // Every branch below calls an admin-only stint endpoint — a member viewing this page
     // read-only must never trigger it (it would just 403-loop on every render).
-    if (!isAdmin) return;
+    if (!canManage) return;
     if (!id || !teamId || isFillingRef.current) return;
     // Wait until every plan input has loaded: a half-loaded page (no tank size or driver pace yet)
     // would compute a wrong plan length and write the difference to the database.
@@ -2030,7 +2169,7 @@ export default function EventTeamPlanPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    isAdmin,
+    canManage,
     id,
     teamId,
     inputsLoaded,
@@ -2111,6 +2250,74 @@ export default function EventTeamPlanPage() {
     [id, teamId, loadStints],
   );
 
+  /** The running stint starts over at this moment (see EventTeamStintsService.toggleStartNow). */
+  const handleRestartNow = useCallback(
+    async (stint: EventTeamStint) => {
+      if (!id || !teamId) return;
+      setBusy(true);
+      setError(null);
+      try {
+        await eventTeamStintsApi.toggleStartNow(id, teamId, stint.id, { restart: true });
+        void loadStints();
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Failed to restart the stint');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [id, teamId, loadStints],
+  );
+
+  // ---- Drag and drop reordering -------------------------------------------------------------
+  const [drag, setDrag] = useState<{ id: string | null; overId: string | null; edge: DropEdge }>({
+    id: null,
+    overId: null,
+    edge: 'before',
+  });
+
+  const handleDragStartRow = useCallback((stintId: string) => setDrag({ id: stintId, overId: null, edge: 'before' }), []);
+  const handleDragOverRow = useCallback(
+    (stintId: string, edge: DropEdge) =>
+      setDrag((prev) => (prev.id === null || (prev.overId === stintId && prev.edge === edge) ? prev : { ...prev, overId: stintId, edge })),
+    [],
+  );
+  const handleDragEndRow = useCallback(() => setDrag({ id: null, overId: null, edge: 'before' }), []);
+
+  const handleDropRow = useCallback(
+    async (targetId: string, edge: DropEdge) => {
+      const draggedId = drag.id;
+      setDrag({ id: null, overId: null, edge: 'before' });
+      if (!id || !teamId || !draggedId || draggedId === targetId) return;
+      const from = stints.findIndex((s) => s.id === draggedId);
+      const target = stints.findIndex((s) => s.id === targetId);
+      if (from === -1 || target === -1) return;
+      const insertAt = edge === 'before' ? target : target + 1;
+      const to = from < insertAt ? insertAt - 1 : insertAt;
+      if (to === from) return;
+
+      // Show the new order straight away; the server's renumbered list replaces it, or the
+      // current list is reloaded if the move is refused.
+      setStints((prev) => {
+        const next = [...prev];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        return next.map((s, i) => ({ ...s, order: i }));
+      });
+      setBusy(true);
+      setError(null);
+      try {
+        const updated = await eventTeamStintsApi.moveTo(id, teamId, draggedId, to);
+        setIfChanged(setStints, updated);
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Failed to reorder stint');
+        void loadStints();
+      } finally {
+        setBusy(false);
+      }
+    },
+    [drag.id, id, teamId, stints, loadStints],
+  );
+
   const handleDeleteStint = useCallback(
     async (stint: EventTeamStint) => {
       if (!id || !teamId) return;
@@ -2132,6 +2339,8 @@ export default function EventTeamPlanPage() {
   // Void-returning wrappers: the memoised StintRow takes plain callbacks.
   const onStintChange = useCallback((stint: EventTeamStint, patch: StintPatch) => void handleStintChange(stint, patch), [handleStintChange]);
   const onStartNow = useCallback((stint: EventTeamStint) => void handleToggleStartNow(stint), [handleToggleStartNow]);
+  const onRestartNow = useCallback((stint: EventTeamStint) => void handleRestartNow(stint), [handleRestartNow]);
+  const onDropRow = useCallback((stintId: string, edge: DropEdge) => void handleDropRow(stintId, edge), [handleDropRow]);
   const onMoveStint = useCallback(
     (stint: EventTeamStint, direction: 'up' | 'down') => void handleMoveStint(stint, direction),
     [handleMoveStint],
@@ -2319,8 +2528,46 @@ export default function EventTeamPlanPage() {
     }
   }
 
+  // ---- Printable pit-wall sheet ----------------------------------------------------------------
+  // Plain props from the rows the table already shows (displayRows) — nothing here recomputes the
+  // fuel/stint cascade, and nothing is written. Re-rendered with the page, so a print always reads
+  // the current plan.
+  const pitWallStints: PitWallStint[] = displayRows.map((row, index) => {
+    const { stint, startMs, startOffsetMinutes, durationMinutes, pitBeforeMinutes, estLaps, weatherPoint, isWetStint } = row;
+    const endMs = startMs !== null ? startMs + durationMinutes * 60_000 : null;
+    const wet = stint.wetOverride ?? isWetStint;
+    return {
+      number: index + 1,
+      driverName: stint.driverUserId ? (driverNames[stint.driverUserId] ?? 'Unknown driver') : null,
+      startClock: startMs !== null ? formatClockMs(startMs) : null,
+      endClock: endMs !== null ? formatClockMs(endMs) : null,
+      simTime: team.simStartTimeOfDay ? addMinutesToTimeOfDay(team.simStartTimeOfDay, startOffsetMinutes) : null,
+      duration: formatMinutesSeconds(durationMinutes),
+      estLaps,
+      pitLabel: index === 0 ? null : pitStopLabel(stint, isLmu, refuelSecondsRaw, tyreSecondsRaw),
+      pitTotal: index === 0 || pitBeforeMinutes <= 0 ? null : formatStopClock(pitBeforeMinutes),
+      tyres: index === 0 ? 'Start' : isLmu ? String(tyresChangedOf(stint)) : stint.tyreChange ? 'Change' : 'Keep',
+      weather: wet ? 'Wet' : 'Dry',
+      weatherNote: weatherPoint ? formatWeatherPoint(weatherPoint) : null,
+    };
+  });
+  const pitWallDrivers: PitWallDriver[] = planDrivers.map((d) => {
+    const timezone = driverTimezones[d.userId] ?? null;
+    return {
+      name: `${driverNames[d.userId] ?? 'Unknown driver'}${d.kind !== 'member' ? ` (${d.kind})` : ''}`,
+      timezone,
+      stints: displayRows.flatMap((r, index) =>
+        r.stint.driverUserId === d.userId
+          ? [{ number: index + 1, localStart: r.startMs !== null && timezone ? formatInTimezone(r.startMs, timezone) : null }]
+          : [],
+      ),
+    };
+  });
+  const eventStartMs = new Date(event.startsAt).getTime();
+
   return (
-    <div className="flex flex-col gap-5">
+    <>
+    <div className="flex flex-col gap-5 print:hidden">
       <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-[13px] text-ds-muted">
         <Link to="/events" className="text-ds-muted hover:text-ds-ink">
           Events
@@ -2345,6 +2592,7 @@ export default function EventTeamPlanPage() {
         <div className="flex min-w-0 flex-col justify-center gap-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="m-0 text-[34px] font-extrabold leading-[1.1]">{team.name}</h1>
+            {isLeadOnly && <span className="chip chip-sm chip-accent">You lead this team</span>}
             <span
               className={`chip chip-sm ${liveConnection === 'live' ? 'chip-accent' : 'chip-muted'}`}
               title={
@@ -2355,6 +2603,15 @@ export default function EventTeamPlanPage() {
             >
               {liveConnection === 'live' ? 'Live' : liveConnection === 'connecting' ? 'Connecting…' : 'Reconnecting…'}
             </span>
+            <PlanPresence presence={presence} currentUserId={user?.id} isAdmin={isAdmin} />
+            {team.raceResultId && (
+              <Link to={`/results/${team.raceResultId}`} className="chip chip-sm chip-accent no-underline hover:brightness-125">
+                Result
+              </Link>
+            )}
+            {readinessActive && teamReadiness && (
+              <ReadinessTag summary={teamReadiness.summary} eventId={event.id} checks={teamReadiness.checks} />
+            )}
             <span
               role="status"
               aria-live="polite"
@@ -2371,7 +2628,24 @@ export default function EventTeamPlanPage() {
             {raceStartMs !== null && ` · ${formatDayMonth(raceStartMs)}, ${formatClockMs(raceStartMs)} start`}
           </span>
         </div>
-        {!isAdmin && <span className="chip chip-muted self-center">View only</span>}
+        {!canManage && <span className="chip chip-muted self-center">View only</span>}
+        {canManage && (
+          <>
+            <button
+              type="button"
+              onClick={() => setShareLiveOpen(true)}
+              className="btn-secondary btn-sm self-center"
+              aria-haspopup="dialog"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" aria-hidden="true">
+                <path d="M12 12h.01M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.5 5.5a9 9 0 0 0 0 13M18.5 5.5a9 9 0 0 1 0 13" />
+              </svg>
+              Share live view
+            </button>
+            {shareLiveOpen && <ShareLiveViewModal eventId={event.id} teamId={team.id} onClose={() => setShareLiveOpen(false)} />}
+            {isAdmin && <DiscordThreadButton eventId={event.id} teamId={team.id} />}
+          </>
+        )}
         {raceStartMs !== null && targetEndMs !== null && (
           <RaceClockTile raceStartMs={raceStartMs} targetEndMs={targetEndMs} clockRows={clockRows} />
         )}
@@ -2509,7 +2783,7 @@ export default function EventTeamPlanPage() {
                   setSettings({ ...settings, [field.key]: e.target.value });
                 }}
                 onBlur={() => void handleSettingBlur(field)}
-                disabled={busy || !isAdmin}
+                disabled={busy || !canManage}
                 className={`input min-h-11 px-3.5 tabular-nums ${field.key === 'lapTimeWetSeconds' && showWetLapNotice ? '[&:not(:focus)]:shadow-[inset_0_-2px_0_var(--color-ds-warn)]' : ''}`}
               />
             </label>
@@ -2578,6 +2852,16 @@ export default function EventTeamPlanPage() {
           Per-driver pace &amp; fuel
         </h2>
         <span className="text-[13px] text-ds-muted">Leave blank to use the team values above.</span>
+        {isAdmin && (
+          <span className="text-[13px] text-ds-muted">
+            Team lead: can plan this crew for this event only (stints, settings, guest drivers, availability).
+          </span>
+        )}
+        {teamLeadSet.error && (
+          <span role="alert" className="text-[13px] text-ds-danger">
+            {teamLeadSet.error}
+          </span>
+        )}
       </div>
       {planDrivers.length === 0 ? (
         <p className="px-6 pb-4 text-ds-muted text-[13px]">No drivers assigned to this team yet.</p>
@@ -2589,7 +2873,8 @@ export default function EventTeamPlanPage() {
                 <th className="py-1.5 pl-6 pr-2">Driver</th>
                 <th className="py-1.5 px-2">Lap time (dry)</th>
                 <th className="py-1.5 px-2">Lap time (wet)</th>
-                <th className="py-1.5 pl-2 pr-6">Fuel / lap</th>
+                <th className={`py-1.5 pl-2 ${teamLeadSet.active ? 'pr-2' : 'pr-6'}`}>Fuel / lap</th>
+                {teamLeadSet.active && <th className="py-1.5 pl-2 pr-6">Team lead</th>}
               </tr>
             </thead>
             <tbody>
@@ -2613,7 +2898,7 @@ export default function EventTeamPlanPage() {
                         placeholder={settings.lapTimeDrySeconds || '01:18.900'}
                         onFocus={() => lockDriverInput(`${s.userId}:dry`, ds?.lapTimeDrySeconds)}
                         onBlur={(e) => handleDriverInputBlur(e, s.userId, 'lapTimeDrySeconds')}
-                        disabled={!isAdmin}
+                        disabled={!canManage}
                         aria-label={`${driverNames[s.userId] ?? 'Driver'} dry lap time`}
                         className="input min-h-10 w-[140px] tabular-nums"
                       />
@@ -2626,12 +2911,12 @@ export default function EventTeamPlanPage() {
                         placeholder="Team value"
                         onFocus={() => lockDriverInput(`${s.userId}:wet`, ds?.lapTimeWetSeconds)}
                         onBlur={(e) => handleDriverInputBlur(e, s.userId, 'lapTimeWetSeconds')}
-                        disabled={!isAdmin}
+                        disabled={!canManage}
                         aria-label={`${driverNames[s.userId] ?? 'Driver'} wet lap time`}
                         className="input min-h-10 w-[140px] tabular-nums"
                       />
                     </td>
-                    <td className="py-2.5 pl-2 pr-6">
+                    <td className={`py-2.5 pl-2 ${teamLeadSet.active ? 'pr-2' : 'pr-6'}`}>
                       <input
                         key={driverInputKey(`${s.userId}:fuel`, ds?.fuelUsagePerLapLiters)}
                         type="number"
@@ -2641,11 +2926,29 @@ export default function EventTeamPlanPage() {
                         placeholder={settings.fuelUsagePerLapLiters || '2.85'}
                         onFocus={() => lockDriverInput(`${s.userId}:fuel`, ds?.fuelUsagePerLapLiters)}
                         onBlur={(e) => handleDriverInputBlur(e, s.userId, 'fuelUsagePerLapLiters')}
-                        disabled={!isAdmin}
+                        disabled={!canManage}
                         aria-label={`${driverNames[s.userId] ?? 'Driver'} fuel per lap`}
                         className="input min-h-10 w-[110px] tabular-nums"
                       />
                     </td>
+                    {teamLeadSet.active && (
+                      <td className="py-2.5 pl-2 pr-6">
+                        {s.kind === 'member' ? (
+                          <button
+                            type="button"
+                            onClick={() => void teamLeadSet.toggle(s.userId)}
+                            disabled={!teamLeadSet.loaded || teamLeadSet.busy}
+                            aria-pressed={teamLeadSet.isLead(s.userId)}
+                            aria-label={`${teamLeadSet.isLead(s.userId) ? 'Remove' : 'Make'} ${driverNames[s.userId] ?? 'driver'} team lead`}
+                            className={`${teamLeadSet.isLead(s.userId) ? 'btn-primary' : 'btn-secondary'} btn-sm min-w-[84px] disabled:opacity-40`}
+                          >
+                            {teamLeadSet.isLead(s.userId) ? 'Lead' : 'Make lead'}
+                          </button>
+                        ) : (
+                          <span className="text-ds-dim">–</span>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -2655,7 +2958,7 @@ export default function EventTeamPlanPage() {
       )}
       </section>
 
-      {(isAdmin || dummyDrivers.length > 0) && (
+      {(canManage || dummyDrivers.length > 0) && (
         <section aria-labelledby="gd-title" className="cut bg-ds-panel px-6 py-[22px] flex flex-col gap-3.5">
           <div className="flex flex-col gap-1">
             <h2 id="gd-title" className="h2">
@@ -2665,7 +2968,7 @@ export default function EventTeamPlanPage() {
               Placeholders or roster guests without a portal account. They can take stints like anyone else.
             </span>
           </div>
-          {isAdmin && (
+          {canManage && (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -2696,7 +2999,7 @@ export default function EventTeamPlanPage() {
                 <li key={d.id} className="flex items-center gap-3 border-t border-ds-line py-2 text-[13px] font-semibold first:border-t-0">
                   <span>{driverNames[d.id] ?? d.name}</span>
                   {d.driverProfileId && <span className="chip chip-muted chip-sm">guest</span>}
-                  {isAdmin && (
+                  {canManage && (
                     <button
                       type="button"
                       onClick={() => void handleRemoveDummy(d)}
@@ -2727,7 +3030,7 @@ export default function EventTeamPlanPage() {
               Hours each driver flagged at signup, with their planned stints outlined. A stint outside a driver's hours
               is flagged.
               {canEditAnyAvailability &&
-                (isAdmin
+                (canManage
                   ? " Click a cell to change a driver's availability."
                   : ' Click a cell in your own row to change your availability.')}
             </span>
@@ -2768,22 +3071,39 @@ export default function EventTeamPlanPage() {
           <h2 id="st-title" className="h2">
             Strategy
           </h2>
-          {isAdmin && (
+          {(canManage || displayRows.length > 0) && (
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => void handleAddStint()} disabled={busy} className="btn-secondary px-5">
-                + Add stint
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleGenerateFullPlan()}
-                disabled={busy || !readyToGeneratePlan}
-                className="btn-primary"
-              >
-                Generate full stint plan
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="square" aria-hidden="true">
-                  <path d="M5 12h13M13 6l6 6-6 6" />
-                </svg>
-              </button>
+              {displayRows.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  title="Print the stint table for the pit wall (Ctrl+P works too)"
+                  className="btn-secondary btn-sm self-center"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" aria-hidden="true">
+                    <path d="M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z" />
+                  </svg>
+                  Print pit-wall sheet
+                </button>
+              )}
+              {canManage && (
+                <>
+                  <button type="button" onClick={() => void handleAddStint()} disabled={busy} className="btn-secondary px-5">
+                    + Add stint
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleGenerateFullPlan()}
+                    disabled={busy || !readyToGeneratePlan}
+                    className="btn-primary"
+                  >
+                    Generate full stint plan
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="square" aria-hidden="true">
+                      <path d="M5 12h13M13 6l6 6-6 6" />
+                    </svg>
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -2794,7 +3114,7 @@ export default function EventTeamPlanPage() {
             {plannedMinutes < raceLengthMinutes - 1 && <span className="text-ds-warn"> — short</span>}
             {plannedMinutes > raceLengthMinutes + 1 && <span className="text-ds-danger"> — over</span>}
           </p>
-          {isAdmin && !readyToGeneratePlan && (
+          {canManage && !readyToGeneratePlan && (
             <button
               type="button"
               onClick={() => setActiveTab('settings')}
@@ -2822,7 +3142,7 @@ export default function EventTeamPlanPage() {
                   type="button"
                   onClick={() => void handleDeleteStint(stint)}
                   disabled={busy}
-                  hidden={!isAdmin}
+                  hidden={!canManage}
                   className="text-ds-muted hover:text-ds-danger text-[11px] font-extrabold uppercase disabled:opacity-40"
                 >
                   Remove
@@ -2837,7 +3157,7 @@ export default function EventTeamPlanPage() {
         <table className="w-full min-w-[980px] border-collapse text-[13px]">
           <thead>
             <tr className="text-left text-[11px] font-bold uppercase text-ds-dim">
-              <th className="py-1.5 pl-5 pr-3 w-[52px]">#</th>
+              <th className="py-1.5 pl-5 pr-3 w-[76px]">#</th>
               <th className="py-1.5 px-2">Driver</th>
               <th className="py-1.5 px-2">Time</th>
               <th className={`py-1.5 px-2 ${isLmu ? 'w-[150px]' : 'w-[100px]'}`}>Tyres</th>
@@ -2883,7 +3203,7 @@ export default function EventTeamPlanPage() {
                     isNext={index === nextStintIndex}
                     color={getDriverColor(stint.driverUserId, driverColorOrder)}
                     driverLabel={stint.driverUserId ? (driverNames[stint.driverUserId] ?? 'Unknown driver') : 'Unassigned'}
-                    isAdmin={isAdmin}
+                    isAdmin={canManage}
                     busy={busy}
                     isLmu={isLmu}
                     simStartTimeOfDay={team.simStartTimeOfDay}
@@ -2892,10 +3212,21 @@ export default function EventTeamPlanPage() {
                     driverNames={driverNames}
                     onStintChange={onStintChange}
                     onStartNow={onStartNow}
+                    onRestartNow={onRestartNow}
                     onMove={onMoveStint}
                     onDelete={onDeleteStint}
                     onSelectFocus={handleSelectFocus}
                     onSelectDone={flushPendingStintRefresh}
+                    // Rows already in the past or running can't be moved, and nothing can be
+                    // dropped on them (that would rewrite what already happened).
+                    canDrag={canManage && !busy && !isActive && !isLocked}
+                    canDrop={canManage && drag.id !== null && drag.id !== stint.id && !isActive && !isLocked}
+                    dragging={drag.id === stint.id}
+                    dropEdge={drag.id !== null && drag.overId === stint.id ? drag.edge : null}
+                    onDragStartRow={handleDragStartRow}
+                    onDragOverRow={handleDragOverRow}
+                    onDragEndRow={handleDragEndRow}
+                    onDropRow={onDropRow}
                   />
                 );
               })
@@ -2907,5 +3238,39 @@ export default function EventTeamPlanPage() {
         </div>
       )}
     </div>
+    <PitWallSheet
+      eventTitle={event.title}
+      trackName={event.track?.name ?? null}
+      simLabel={isLmu ? 'Le Mans Ultimate' : 'iRacing'}
+      carClasses={event.carClasses ?? []}
+      eventDate={Number.isFinite(eventStartMs) ? `${formatDayMonth(eventStartMs)} ${new Date(eventStartMs).getFullYear()}` : null}
+      teamName={team.name}
+      carName={team.carId && car ? car.name : null}
+      raceStart={
+        raceStartMs !== null
+          ? { date: formatDayMonth(raceStartMs), clock: formatClockMs(raceStartMs), zone: formatZone(raceStartMs) }
+          : null
+      }
+      raceEndClock={targetEndMs !== null ? formatClockMs(targetEndMs) : null}
+      raceLength={formatDuration(raceLengthMinutes)}
+      simStartClock={team.simStartTimeOfDay && TIME_OF_DAY_PATTERN.test(team.simStartTimeOfDay) ? team.simStartTimeOfDay : null}
+      isLmu={isLmu}
+      tankLiters={tankCapacityLiters}
+      fuelPerLapLiters={fuelUsagePerLap}
+      lapsPerTank={maxStintLaps}
+      fuelLimitPercent={event.sim === 'IRACING' ? numOrNull(fuelLimitInput) : null}
+      tyreLimit={tyreLimit}
+      tyresUsed={tyreLimit !== null ? tyresUsedTotal : null}
+      refuelSeconds={refuelSecondsRaw}
+      tyreSeconds={tyreSecondsRaw}
+      partialTyreSeconds={isLmu ? (partialTyreSeconds ?? PARTIAL_TYRE_CHANGE_SECONDS_DEFAULT) : null}
+      driveThroughSeconds={driveSecondsRaw}
+      stintCount={displayRows.length}
+      pitStopCount={Math.max(0, displayRows.length - 1)}
+      estLaps={displayRows.reduce((sum, r) => sum + (r.estLaps ?? 0), 0)}
+      stints={pitWallStints}
+      drivers={pitWallDrivers}
+    />
+    </>
   );
 }

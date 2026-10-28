@@ -20,11 +20,13 @@ export default function DashboardShell() {
 
   return (
     <GlobalSearchProvider>
-      <div className="min-h-screen bg-ds-page text-ds-ink">
+      {/* print: — the team plan's pit-wall sheet lives inside <main>, so the shell chrome is hidden
+          and main's offsets/padding/min-height are dropped, leaving only the sheet on paper. */}
+      <div className="min-h-screen bg-ds-page text-ds-ink print:min-h-0 print:bg-[#fff] print:text-[#000]">
         <NavSidebar {...navData} />
         <MobileNav {...navData} />
-        <main className="md:ml-[260px] min-h-screen box-border pt-20 md:pt-7 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-16 px-[clamp(16px,3vw,44px)]">
-          <div className="max-w-[1200px] mx-auto">
+        <main className="md:ml-[260px] min-h-screen box-border pt-20 md:pt-7 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-16 px-[clamp(16px,3vw,44px)] print:m-0 print:min-h-0 print:p-0">
+          <div className="max-w-[1200px] mx-auto print:max-w-none">
             <ChunkErrorBoundary resetKey={pathname}>
               <Suspense fallback={<RouteFallback />}>
                 <Outlet />

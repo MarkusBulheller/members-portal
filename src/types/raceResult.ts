@@ -49,6 +49,12 @@ export interface RaceResult {
   splitNumber: number | null;
   totalSplits: number | null;
   shareToken: string | null;
+  /** How the result got here: typed in by an admin or picked up by the auto-import job. Absent/null on older rows. */
+  importSource?: 'MANUAL' | 'AUTO' | null;
+  importedAt?: string | null;
+  /** The event / event crew this result was matched to, if any. */
+  eventId?: string | null;
+  eventTeamId?: string | null;
   driverStints: RaceResultDriverStint[];
   laps: RaceResultLap[];
   createdAt: string;

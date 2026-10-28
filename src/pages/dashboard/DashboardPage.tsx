@@ -1,8 +1,10 @@
 import { lazy, memo, Suspense, useEffect, useMemo, useState, type SelectHTMLAttributes } from 'react';
 import { Link } from 'react-router-dom';
+import DashboardReadiness from '../../components/DashboardReadiness';
 import NavIcon from '../../components/NavIcon';
 import ChunkErrorBoundary from '../../components/ChunkErrorBoundary';
 import StatLeaderboard, { type LeaderboardItem } from '../../components/StatLeaderboard';
+import WelcomeChecklist from '../../components/WelcomeChecklist';
 import { useAuth } from '../../context/AuthContext';
 import { useGlobalSearch } from '../../context/GlobalSearchContext';
 import { driversApi } from '../../lib/api/drivers';
@@ -13,7 +15,7 @@ import { eventsWaitingOnViewer, isSignupOpen } from '../../lib/eventSignups';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import type { RaceEvent, UpcomingStintAssignment, UpcomingStintSlot } from '../../types/event';
 import { formatRaceLength } from '../../types/raceLength';
-import type { DashboardFilters, DashboardStats, EntityStat } from '../../types/stats';
+import type { DashboardFilters, DashboardStats } from '../../types/stats';
 import type { TeamHighlight } from '../../types/teamHighlight';
 
 // Recharts is big; the scatter chart is its own lazy chunk so the dashboard paints without it.
@@ -115,7 +117,7 @@ function Blade({ color }: { color: string }) {
     <>
         <div
           aria-hidden="true"
-          className="absolute bottom-0 right-0 top-0 w-[66px] sm:hidden"
+          className="absolute bottom-0 right-0 top-0 w-[50px] sm:hidden"
           style={{
             background: `linear-gradient(100deg, transparent 0 30%, ${color} 30% 44%, transparent 44% 56%, ${color} 56% 100%)`,
           }}
@@ -176,7 +178,11 @@ function StintStrip({ stints, live }: { stints: UpcomingStintSlot[]; live: boole
           </strong>
         </span>
       </div>
-      <div role="img" aria-label={summary} className="flex h-[26px] gap-[3px] px-[5px] sm:h-8 sm:gap-1 sm:px-1.5">
+      <div
+        role="img"
+        aria-label={summary}
+        className={`flex h-8 px-[5px] sm:h-8 sm:gap-1 sm:px-1.5 ${total > 16 ? 'gap-[2px]' : 'gap-[3px]'}`}
+      >
         {stints.map((slot, i) => {
           const tone = slot.isMine
             ? live
@@ -191,7 +197,10 @@ function StintStrip({ stints, live }: { stints: UpcomingStintSlot[]; live: boole
               title={`Stint ${i + 1} · ${slot.driverName ?? 'Unassigned'}${slot.isMine ? ' (you)' : ''}`}
               className={`flex min-w-0 flex-1 -skew-x-16 items-center justify-center overflow-hidden text-[10px] font-extrabold sm:text-xs ${tone}`}
             >
-              <span className="skew-x-16">{initials(slot.driverName)}</span>
+              {/* Initials don't fit on a packed phone strip: hidden there past 10 stints. */}
+              <span className={`skew-x-16 ${total > 10 ? 'max-sm:hidden' : ''}`}>
+                {initials(slot.driverName)}
+              </span>
             </span>
           );
         })}
@@ -280,7 +289,7 @@ function StintCard({ assignment }: { assignment: UpcomingStintAssignment }) {
   return (
     <section
       aria-labelledby={titleId}
-      className={`cut-lg relative flex flex-col gap-4 py-5 pl-[18px] pr-20 sm:gap-[22px] sm:py-[26px] sm:pl-[30px] sm:pr-[200px] ${
+      className={`cut-lg relative flex flex-col gap-5 py-6 pl-5 pr-14 sm:gap-[22px] sm:py-[26px] sm:pl-[30px] sm:pr-[200px] ${
         live ? 'bg-w2w-red text-on-accent' : 'bg-ds-panel text-ds-ink'
       }`}
     >
@@ -303,7 +312,7 @@ function StintCard({ assignment }: { assignment: UpcomingStintAssignment }) {
             {[
               assignment.teamName,
               assignment.trackName,
-              formatAssignmentTime(assignment.timeslotStartsAt),
+              formatAssignmentTime(assignment.raceStartsAt ?? assignment.timeslotStartsAt),
               formatRaceLength(assignment.raceLengthMinutes),
             ]
               .filter(Boolean)
@@ -478,8 +487,8 @@ export default function DashboardPage() {
   const [driverCount, setDriverCount] = useState<number | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<RaceEvent[]>([]);
   const [openSignupCount, setOpenSignupCount] = useState<number | null>(null);
+  const [hasSignedUp, setHasSignedUp] = useState(false);
   const [waitingCount, setWaitingCount] = useState(0);
-  const [overallCars, setOverallCars] = useState<EntityStat[]>([]);
   const { openSearch, shortcutLabel } = useGlobalSearch();
   const isAdmin = user?.role === 'ADMIN';
   const [myStints, setMyStints] = useState<UpcomingStintAssignment[]>([]);
@@ -487,7 +496,8 @@ export default function DashboardPage() {
   const [filters, setFilters] = useState<DashboardFilters>(EMPTY_FILTERS);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsFailed, setStatsFailed] = useState(false);
-  // The Team stats section (chart, five leaderboards, filters) is hidden below sm; don't mount it there.
+  // The Team stats section (chart, five leaderboards, filters) and the team highlights are hidden
+  // below sm; don't mount (or load) them there.
   const showTeamStats = useMediaQuery('(min-width: 640px)');
   // Date shown in the header; computed once, it doesn't tick.
   const today = useMemo(() => formatDay(new Date()), []);
@@ -535,6 +545,7 @@ export default function DashboardPage() {
         .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
       setUpcomingEvents(upcoming.slice(0, 5));
       setOpenSignupCount(events.filter((e) => isSignupOpen(e, now)).length);
+      setHasSignedUp(events.some((e) => e.viewer?.signedUp || e.viewer?.raced));
       setWaitingCount(eventsWaitingOnViewer(events, now).length);
     }).catch(() => {});
     return () => {
@@ -545,6 +556,7 @@ export default function DashboardPage() {
   // Request token: if the filters change again before a response lands, the stale response is
   // dropped (otherwise A's numbers could overwrite B's under B's filter).
   useEffect(() => {
+    if (!showTeamStats) return; // phones don't show the stats section, so don't load it
     let cancelled = false;
     statsApi
       .getDashboard(filters)
@@ -552,11 +564,6 @@ export default function DashboardPage() {
         if (cancelled) return;
         setStats(result);
         setStatsFailed(false);
-        // The mobile "Most driven" teaser is always all-seasons, whatever the filters below say; the
-        // first load (no filters) is exactly that data.
-        if (!(filters.year || filters.trackId || filters.carId || filters.series || filters.raceLength)) {
-          setOverallCars(result.mostDrivenCars);
-        }
       })
       .catch(() => {
         if (cancelled) return;
@@ -567,7 +574,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [filters]);
+  }, [filters, showTeamStats]);
 
   const hasFilters = !!(filters.year || filters.trackId || filters.carId || filters.series || filters.raceLength);
 
@@ -610,6 +617,10 @@ export default function DashboardPage() {
           </kbd>
         </button>
       </header>
+
+      <WelcomeChecklist hasSignedUp={hasSignedUp} hasOpenEvents={(openSignupCount ?? 0) > 0} />
+
+      {isAdmin && <DashboardReadiness events={upcomingEvents} />}
 
       {myStints.map((assignment) => (
         <StintCard key={assignment.teamId} assignment={assignment} />
@@ -693,7 +704,7 @@ export default function DashboardPage() {
             </Link>
           </div>
 
-          {highlights.length > 0 && (
+          {showTeamStats && highlights.length > 0 && (
             <section aria-labelledby="highlights" className="cut flex flex-col bg-ds-panel px-4 pb-1 pt-4 sm:px-5 sm:pb-2 sm:pt-5">
               <h2 id="highlights" className="h2 mb-2.5">
                 <span className="sm:hidden">Team highlight</span>
@@ -733,53 +744,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {overallCars.length > 0 && (
-        <section aria-labelledby="most-driven" className="cut flex flex-col bg-ds-panel pb-1.5 pt-4 sm:hidden">
-          <div className="flex flex-col gap-0.5 px-4 pb-3">
-            <h2 id="most-driven" className="h2">
-              Most driven
-            </h2>
-            <span className="text-xs text-ds-muted">Races per car, all seasons</span>
-          </div>
-          <ol className="m-0 flex list-none flex-col p-0">
-            {overallCars.slice(0, 3).map((car, i) => {
-              const max = Math.max(overallCars[0].count, 1);
-              const row = (
-                <>
-                  <div className="flex items-center gap-2.5">
-                    <span
-                      className={`slant num box-border min-w-[30px] shrink-0 px-1.5 py-0.5 text-center text-xs ${
-                        MEDAL_BG[i] ? `${MEDAL_BG[i]} text-[#111113]` : 'bg-ds-rank text-ds-ink-soft'
-                      }`}
-                    >
-                      {i + 1}
-                    </span>
-                    <span className={`min-w-0 flex-1 truncate ${i === 0 ? 'font-bold' : ''}`}>{car.name}</span>
-                    <span className="num text-[15px]">{car.count}</span>
-                  </div>
-                  <div className="ml-10 h-1 bg-ds-control" aria-hidden="true">
-                    <div className="h-full bg-w2w-red" style={{ width: `${(car.count / max) * 100}%` }} />
-                  </div>
-                </>
-              );
-              const rowClass = 'flex flex-col gap-1.5 border-t border-ds-line px-4 py-2.5 text-[13px] text-ds-ink';
-              return (
-                <li key={car.id ?? car.name}>
-                  {car.id ? (
-                    <Link to={`/cars/${car.id}`} className={`${rowClass} row-hover`}>
-                      {row}
-                    </Link>
-                  ) : (
-                    <div className={rowClass}>{row}</div>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-        </section>
-      )}
-
-      {/* Not on the Mobile board (its "Most driven" teaser above stands in): from sm up only. */}
+      {/* Not on phones: from sm up only. */}
       {showTeamStats && (
         <section aria-labelledby="team-stats" className="flex flex-col gap-3.5 pt-3">
           <div className="flex flex-wrap items-center justify-between gap-3">

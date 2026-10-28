@@ -33,13 +33,17 @@ export interface DriverProfile {
   startingDriver: boolean;
   wetDriver: boolean;
   nightDriver: boolean;
+  /** Opt-in: the team bot DMs this member their personal race summary on Discord after a result
+   * they drove in is imported. Members only; false for guests. */
+  raceSummaryDm: boolean;
   /** Full award list — GET /drivers/:id and the other single-profile endpoints. Absent from the roster
    * list (GET /drivers), which sends `awardCount` instead. */
   awards?: AchievementAward[];
   /** Roster list only: how many awards this driver holds. */
   awardCount?: number;
-  /** Discord handle of the linked member (no @) — only sent to the profile's owner and admins, and
-   * null for manually added drivers. Absent on list responses. */
+  /** Discord handle (no @) — a linked member's, sent only to the profile's owner and admins; for a
+   * manually added (guest) driver, the username an admin entered so they can sign up through
+   * Discord (admins only). Null otherwise; absent on list responses. */
   discordUsername?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -58,6 +62,7 @@ export interface UpdateDriverProfileInput {
   startingDriver?: boolean;
   wetDriver?: boolean;
   nightDriver?: boolean;
+  raceSummaryDm?: boolean;
 }
 
 /** One candidate from GET /iracing/drivers/search — the same shape as a real member's link
@@ -88,6 +93,8 @@ export interface CreateManualDriverInput {
   startingDriver?: boolean;
   wetDriver?: boolean;
   nightDriver?: boolean;
+  /** Discord username (e.g. delta2611, no @); omit when unknown. */
+  discordUsername?: string;
 }
 
 export interface UpdateManualDriverInput {
@@ -97,6 +104,8 @@ export interface UpdateManualDriverInput {
   /** null explicitly clears a previously-set timezone; omitting the field leaves it untouched. */
   timezone?: string | null;
   bio?: string;
+  /** Discord username; null explicitly clears it, omitting leaves it untouched. */
+  discordUsername?: string | null;
   maxSuccessiveStints?: number | null;
   startingDriver?: boolean;
   wetDriver?: boolean;

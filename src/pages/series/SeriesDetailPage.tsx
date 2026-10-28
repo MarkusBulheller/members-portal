@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import DateField from '../../components/DateField';
 import DriverShareChart from '../../components/DriverShareChart';
 import GenerateEventsFromSeriesPanel from '../../components/GenerateEventsFromSeriesPanel';
 import HourlyForecastBars from '../../components/HourlyForecastBars';
@@ -10,6 +11,7 @@ import { exportChartsAsPng } from '../../lib/exportChartPng';
 import { currentRaceWeekNum, parseSeriesWeeks } from '../../lib/iracingSeriesWeeks';
 import { summarizeRaceWeek } from '../../lib/iracingWeather';
 import { formatShortDate } from '../../lib/formatShortDate';
+import { useMediaQuery } from '../../lib/useMediaQuery';
 import { seriesAbbreviation } from '../../lib/seriesAbbreviation';
 import type { IracingCarUsageStat, IracingSeriesSeasonDetail } from '../../types/iracingSeries';
 import type { WeatherForecastPoint } from '../../types/iracingWeatherForecast';
@@ -39,6 +41,9 @@ export default function SeriesDetailPage() {
 
 function SeriesDetail({ seasonId }: { seasonId: string }) {
   const { user } = useAuth();
+  // The week table has 5 columns from sm up and 3 below (date and weather fold into the other
+  // cells), and the expanded row has to span exactly the columns that are shown.
+  const wideTable = useMediaQuery('(min-width: 640px)');
   const [season, setSeason] = useState<IracingSeriesSeasonDetail | null>(null);
   const numericSeasonId = Number(seasonId);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -223,7 +228,7 @@ function SeriesDetail({ seasonId }: { seasonId: string }) {
         <span className="min-w-0 truncate font-semibold text-ds-ink">{season.seriesName}</span>
       </nav>
 
-      <header className="cut-lg relative flex flex-col gap-[22px] bg-ds-panel py-[26px] pl-7 pr-[72px] min-[640px]:pr-[200px]">
+      <header className="cut-lg relative flex flex-col gap-[22px] bg-ds-panel py-[26px] pl-5 pr-[64px] sm:pl-7 min-[640px]:pr-[200px]">
         <div
           aria-hidden="true"
           className="absolute bottom-0 right-0 top-0 w-[56px] min-[640px]:w-[160px]"
@@ -232,8 +237,8 @@ function SeriesDetail({ seasonId }: { seasonId: string }) {
               'linear-gradient(110deg, transparent 0 28%, var(--color-w2w-red) 28% 40%, transparent 40% 50%, var(--color-w2w-red) 50% 100%)',
           }}
         />
-        <div className="flex min-w-0 items-center gap-[18px]">
-          <span className="cut-xs flex h-16 w-16 flex-none items-center justify-center overflow-hidden bg-ds-field">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-[18px]">
+          <span className="cut-xs flex h-12 w-12 flex-none items-center justify-center overflow-hidden bg-ds-field sm:h-16 sm:w-16">
             {season.logoUrl ? (
               <img
                 src={season.logoUrl}
@@ -251,7 +256,7 @@ function SeriesDetail({ seasonId }: { seasonId: string }) {
           </span>
           <div className="flex min-w-0 flex-col gap-1">
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="m-0 text-[36px] font-extrabold leading-[1.05]">{season.seriesName}</h1>
+              <h1 className="m-0 text-[24px] font-extrabold leading-[1.05] [overflow-wrap:anywhere] sm:text-[36px]">{season.seriesName}</h1>
               {!season.active && <span className="chip chip-sm chip-muted">Archived</span>}
             </div>
             <span className="text-ds-muted">
@@ -304,16 +309,15 @@ function SeriesDetail({ seasonId }: { seasonId: string }) {
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-2.5">
-              <input
-                type="date"
+              <DateField
                 aria-label="Import car usage since"
                 value={importSince}
-                onChange={(e) => {
-                  setImportSince(e.target.value);
+                onChange={(value) => {
+                  setImportSince(value);
                   setImportDone(false);
                 }}
                 max={new Date().toISOString().slice(0, 10)}
-                className="input !w-auto"
+                className="w-[210px]"
               />
               <button
                 type="button"
@@ -362,14 +366,15 @@ function SeriesDetail({ seasonId }: { seasonId: string }) {
           <p className="m-0 px-5 pb-4 text-sm text-ds-muted">No schedule data yet.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse text-sm">
+            {/* Phones: Week (date under it) | Track (weather under it) | chevron, in the page width. */}
+            <table className="w-full table-fixed border-collapse text-sm sm:min-w-[640px] sm:table-auto">
               <thead>
                 <tr className="text-left text-[11px] font-bold uppercase text-ds-dim">
-                  <th className="w-[56px] py-1.5 pl-5 pr-3 font-bold">Week</th>
-                  <th className="w-[110px] px-3 py-1.5 font-bold">Date</th>
-                  <th className="px-3 py-1.5 font-bold">Track</th>
-                  <th className="px-3 py-1.5 font-bold">Weather</th>
-                  <th className="w-10 py-1.5 pl-3 pr-5 font-bold">
+                  <th className="w-[76px] py-1.5 pl-5 pr-3 font-bold sm:w-[56px]">Week</th>
+                  <th className="w-[110px] px-3 py-1.5 font-bold max-sm:hidden">Date</th>
+                  <th className="px-3 py-1.5 font-bold max-sm:pl-0">Track</th>
+                  <th className="px-3 py-1.5 font-bold max-sm:hidden">Weather</th>
+                  <th className="w-11 py-1.5 pl-1 pr-4 font-bold sm:w-10 sm:pl-3 sm:pr-5">
                     <span className="sr-only">Expand</span>
                   </th>
                 </tr>
@@ -401,16 +406,23 @@ function SeriesDetail({ seasonId }: { seasonId: string }) {
                           <span className={`num text-lg ${isCurrent ? 'text-w2w-red-ink' : ''}`}>
                             {week.raceWeekNum !== null ? `W${week.raceWeekNum + 1}` : '—'}
                           </span>
+                          <span className="block text-[11px] font-normal text-ds-muted sm:hidden">
+                            {week.startDate ? formatShortDate(week.startDate) || '—' : '—'}
+                          </span>
                         </td>
-                        <td className="px-3 py-3 align-middle text-[13px] text-ds-muted">
+                        <td className="px-3 py-3 align-middle text-[13px] text-ds-muted max-sm:hidden">
                           {week.startDate ? formatShortDate(week.startDate) || '—' : '—'}
                         </td>
-                        <td className="px-3 py-3 align-middle font-bold">
-                          <div className="max-w-[300px] truncate" title={week.trackName}>
+                        <td className="px-3 py-3 align-middle font-bold max-sm:pl-0">
+                          <div className="truncate sm:max-w-[300px]" title={week.trackName}>
                             {week.trackName}
                           </div>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-normal text-ds-ink-soft sm:hidden">
+                            {isCurrent && <span className="chip chip-sm chip-accent bg-ds-line">This week</span>}
+                            <span>{week.weatherSummary}</span>
+                          </div>
                         </td>
-                        <td className="px-3 py-3 align-middle">
+                        <td className="px-3 py-3 align-middle max-sm:hidden">
                           <div className="flex items-center gap-2 text-[13px] text-ds-ink-soft">
                             {isCurrent && <span className="chip chip-sm chip-accent bg-ds-line">This week</span>}
                             <p className="m-0">{week.weatherSummary}</p>
@@ -419,7 +431,7 @@ function SeriesDetail({ seasonId }: { seasonId: string }) {
                             <p className="m-0 mt-0.5 text-xs text-ds-muted">{week.weatherDetails.join(' · ')}</p>
                           )}
                         </td>
-                        <td className="py-3 pl-3 pr-5 align-middle">
+                        <td className="py-3 pl-1 pr-4 align-middle sm:pl-3 sm:pr-5">
                           <svg
                             width="16"
                             height="16"
@@ -438,8 +450,8 @@ function SeriesDetail({ seasonId }: { seasonId: string }) {
                       </tr>
                       {isExpanded && week.raceWeekNum !== null && (
                         <tr className="border-t border-ds-line">
-                          <td colSpan={5} className="bg-ds-raised p-0 shadow-[inset_3px_0_0_var(--color-w2w-red)]">
-                            <div className="flex flex-wrap gap-3 px-5 pb-5 pt-1.5">
+                          <td colSpan={wideTable ? 5 : 3} className="bg-ds-raised p-0 shadow-[inset_3px_0_0_var(--color-w2w-red)]">
+                            <div className="flex flex-wrap gap-3 px-3 pb-5 pt-1.5 sm:px-5">
                               <div className="cut-sm flex min-w-0 flex-[3_1_420px] flex-col gap-2 bg-ds-field p-4">
                                 {loadingWeeks[week.raceWeekNum] ? (
                                   <p className="m-0 text-xs text-ds-muted">Loading forecast...</p>

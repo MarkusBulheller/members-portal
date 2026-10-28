@@ -26,6 +26,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { label: 'Events', to: '/events', icon: 'events', badgeKey: 'openSignups' },
       { label: 'Results', to: '/results', icon: 'results' },
+      { label: 'Recap', to: '/recap', icon: 'recap' },
     ],
   },
   {

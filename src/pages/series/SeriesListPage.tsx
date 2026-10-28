@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { iracingSeriesApi } from '../../lib/api/iracingSeries';
 import { beginIracingSeriesSync } from '../../lib/iracing';
@@ -13,6 +13,9 @@ export default function SeriesListPage() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const justSynced = searchParams.get('synced');
+  const failedCount = Number(searchParams.get('failed')) || 0;
+  // Which series those were is only known right after the sync (router state, gone on reload).
+  const failedSeries = (useLocation().state as { failedSeries?: { seriesId: number; name: string }[] } | null)?.failedSeries ?? [];
   const [series, setSeries] = useState<IracingSeriesSeason[] | null>(null);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -79,6 +82,11 @@ export default function SeriesListPage() {
       {justSynced && (
         <p className="cut-sm m-0 bg-ds-panel px-4 py-3 text-sm text-w2w-red-ink shadow-[inset_3px_0_0_var(--color-w2w-red)]">
           Synced {justSynced} series from iRacing.
+          {failedCount > 0 &&
+            ` ${failedCount} series couldn’t be refreshed because iRacing didn’t answer — they were left as they were. Run the sync again in a few minutes.`}
+          {failedSeries.length > 0 && (
+            <span className="mt-1.5 block text-xs text-ds-muted">Not refreshed: {failedSeries.map((s) => s.name).join(' · ')}</span>
+          )}
         </p>
       )}
       {error && (

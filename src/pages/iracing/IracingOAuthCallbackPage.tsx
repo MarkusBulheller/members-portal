@@ -69,7 +69,12 @@ export default function IracingOAuthCallbackPage() {
 
     if (purpose === 'sync-series') {
       completeIracingSeriesSync(code, state)
-        .then(({ synced }) => navigate(`/series?synced=${synced}`, { replace: true }))
+        .then(({ synced, failed, failedSeries }) =>
+          navigate(`/series?synced=${synced}${failed ? `&failed=${failed}` : ''}`, {
+            replace: true,
+            state: { failedSeries: failedSeries ?? [] },
+          }),
+        )
         .catch((err: unknown) => {
           setError(err instanceof Error ? err.message : 'Failed to sync the iRacing series catalog.');
         });

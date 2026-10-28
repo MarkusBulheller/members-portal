@@ -32,6 +32,8 @@ export interface EventTeam {
   /** In-game clock time ("HH:MM") this crew's first stint starts at — iRacing sessions can be
    * configured to start at any sim time-of-day regardless of the real-world green-flag time. */
   simStartTimeOfDay: string | null;
+  /** The imported race result matched to this crew, once there is one. */
+  raceResultId?: string | null;
   /** Placeholder / roster-guest drivers on this crew — only present on the list response. */
   dummyDrivers?: EventTeamDummyDriver[];
   createdAt: string;

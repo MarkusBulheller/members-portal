@@ -1,5 +1,10 @@
+import { rankTimeslots } from './timeslotPreference';
+
 export interface SignupFormValues {
+  /** The picked start times, kept in preference order (most preferred first). */
   timeslotIds: string[];
+  /** Same ids in the same order — what gets submitted as the ranking. */
+  timeslotPreference: string[];
   carClass: string;
   secondaryCarClass: string;
   carId: string;
@@ -8,6 +13,7 @@ export interface SignupFormValues {
 
 export const EMPTY_SIGNUP_VALUES: SignupFormValues = {
   timeslotIds: [],
+  timeslotPreference: [],
   carClass: '',
   secondaryCarClass: '',
   carId: '',
@@ -16,14 +22,17 @@ export const EMPTY_SIGNUP_VALUES: SignupFormValues = {
 
 /** Seeds the signup form from a saved signup. */
 export function signupToFormValues(signup: {
-  timeslots: { id: string }[];
+  timeslots: { id: string; startsAt: string }[];
+  timeslotPreference?: string[] | null;
   carClass: string | null;
   secondaryCarClass: string | null;
   carId: string | null;
   availableHours: string[];
 }): SignupFormValues {
+  const timeslotIds = rankTimeslots(signup.timeslots, signup.timeslotPreference).map((t) => t.id);
   return {
-    timeslotIds: signup.timeslots.map((t) => t.id),
+    timeslotIds,
+    timeslotPreference: timeslotIds,
     carClass: signup.carClass ?? '',
     secondaryCarClass: signup.secondaryCarClass ?? '',
     carId: signup.carId ?? '',
@@ -36,6 +45,7 @@ export function signupToFormValues(signup: {
 export function formValuesToSignupInput(values: SignupFormValues) {
   return {
     timeslotIds: values.timeslotIds,
+    timeslotPreference: values.timeslotPreference,
     carClass: values.carClass || null,
     secondaryCarClass: values.secondaryCarClass || null,
     carId: values.carId || null,
