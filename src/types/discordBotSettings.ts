@@ -3,6 +3,8 @@ export interface DiscordBotSettings {
   eventsChannelId: string | null;
   /** Channel where automatically/manually imported race results are announced. */
   resultsChannelId: string | null;
+  /** Category in which the per-event Discord channels are created. */
+  eventCategoryId: string | null;
   /** Whether the Discord application's public key is stored — never the key itself. */
   publicKeySet: boolean;
   /** Discord user id that gets a DM when someone who isn't linked tries to sign up. */
@@ -16,6 +18,8 @@ export interface UpdateDiscordBotSettingsInput {
   eventsChannelId?: string;
   /** Empty string explicitly clears it; omitted leaves it untouched. */
   resultsChannelId?: string;
+  /** Empty string explicitly clears it; omitted leaves it untouched. */
+  eventCategoryId?: string;
   /** 64 hex chars; blank/omitted leaves the stored key untouched. */
   publicKey?: string;
   /** Empty string clears it; omitted leaves it untouched. */

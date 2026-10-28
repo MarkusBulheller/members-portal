@@ -48,6 +48,7 @@ export default function DiscordBotSettingsPage() {
   const [botToken, setBotToken] = useState('');
   const [eventsChannelId, setEventsChannelId] = useState('');
   const [resultsChannelId, setResultsChannelId] = useState('');
+  const [eventCategoryId, setEventCategoryId] = useState('');
   const [publicKey, setPublicKey] = useState('');
   const [alertUserId, setAlertUserId] = useState('');
   const [copied, setCopied] = useState(false);
@@ -63,6 +64,7 @@ export default function DiscordBotSettingsPage() {
       setSettings(s);
       setEventsChannelId(s.eventsChannelId ?? '');
       setResultsChannelId(s.resultsChannelId ?? '');
+      setEventCategoryId(s.eventCategoryId ?? '');
       setAlertUserId(s.alertUserId ?? '');
     });
 
@@ -88,6 +90,7 @@ export default function DiscordBotSettingsPage() {
         botToken: botToken.trim() || undefined,
         eventsChannelId,
         resultsChannelId: resultsChannelId.trim(),
+        eventCategoryId: eventCategoryId.trim(),
         publicKey: publicKey.trim() || undefined,
         alertUserId: alertUserId.trim(),
       });
@@ -95,6 +98,7 @@ export default function DiscordBotSettingsPage() {
       setBotToken('');
       setPublicKey('');
       setResultsChannelId(updated.resultsChannelId ?? '');
+      setEventCategoryId(updated.eventCategoryId ?? '');
       setAlertUserId(updated.alertUserId ?? '');
       setSaved(true);
       loadStatus();
@@ -177,6 +181,23 @@ export default function DiscordBotSettingsPage() {
           <span className="text-xs text-ds-dim">
             Where imported results are announced. Same steps as above (Copy Channel ID); the bot needs Send Messages
             permission there too. Leave empty to skip announcements.
+          </span>
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="lbl">Event category ID</span>
+          <input
+            type="text"
+            value={eventCategoryId}
+            onChange={(e) => setEventCategoryId(e.target.value)}
+            placeholder="e.g. 1135558244635516998"
+            inputMode="numeric"
+            className="input tabular-nums"
+          />
+          <span className="text-xs text-ds-dim">
+            The category where the <b>Discord channel</b> button on an event page creates a new channel. Right-click the
+            category in Discord → Copy Category ID. The bot needs the Manage Channels permission (on the server or on
+            that category). Until it is set, the button asks you to set it.
           </span>
         </label>
 

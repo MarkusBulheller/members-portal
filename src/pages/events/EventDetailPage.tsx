@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import DiscordThreadButton from '../../components/DiscordThreadModal';
 import EventWeatherForecast from '../../components/EventWeatherForecast';
 import HourlyAvailabilityGrid from '../../components/HourlyAvailabilityGrid';
 import Modal from '../../components/Modal';
@@ -462,6 +463,7 @@ export default function EventDetailPage() {
                 <Link to={`/events/${event.id}/edit`} className="btn-secondary px-5">
                   Edit
                 </Link>
+                <DiscordThreadButton eventId={event.id} className="btn-secondary px-5" />
                 {event.status === 'PUBLISHED' && (
                   <button onClick={() => void handleCloseSignups()} disabled={busy} className="btn-secondary px-5">
                     Close signups
