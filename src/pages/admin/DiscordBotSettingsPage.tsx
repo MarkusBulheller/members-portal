@@ -197,7 +197,9 @@ export default function DiscordBotSettingsPage() {
           <span className="text-xs text-ds-dim">
             The category where the <b>Discord channel</b> button on an event page creates a new channel. Right-click the
             category in Discord → Copy Category ID. The bot needs the Manage Channels permission (on the server or on
-            that category). Until it is set, the button asks you to set it.
+            that category). Until it is set, the button asks you to set it. The same category is where the channel of a{' '}
+            <b>weekly series</b> event is created automatically when you publish it, with its sign-up pinned in it (the bot
+            also needs Manage Messages there to pin); a weekly event without a category gets no sign-up post.
           </span>
         </label>
 

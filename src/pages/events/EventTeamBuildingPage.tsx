@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import DrivingLoadPanel from '../../components/DrivingLoadPanel';
 import EventTeamsPanel from '../../components/EventTeamsPanel';
 import HourlyAvailabilityGrid, { type AvailabilityGridRow } from '../../components/HourlyAvailabilityGrid';
 import Modal from '../../components/Modal';
@@ -13,6 +14,7 @@ import { driversApi } from '../../lib/api/drivers';
 import { eventsApi } from '../../lib/api/events';
 import { eventTeamsApi } from '../../lib/api/eventTeams';
 import { iracingTeamsApi } from '../../lib/api/iracingTeams';
+import { recapApi } from '../../lib/api/recap';
 import { formatClock, formatDayShort, formatSlot } from '../../lib/eventFormatting';
 import { guestSlots } from '../../lib/guestSignups';
 import { readinessSummaryLabel } from '../../lib/readiness';
@@ -23,7 +25,9 @@ import type { Car } from '../../types/car';
 import type { EventSignup, EventTimeslot, RaceEventDetail } from '../../types/event';
 import type { EventTeam } from '../../types/eventTeam';
 import type { IracingTeam } from '../../types/iracingTeam';
+import type { LoadDriver } from '../../lib/drivingLoad';
 import { formatRaceLength } from '../../types/raceLength';
+import type { RecapStats } from '../../types/recap';
 
 /** Team colours for the availability grid: the board's accent for the first team, slate for the
  * second, then a stable run of distinct hues for any further teams (by team order). */
@@ -62,6 +66,10 @@ function EventTeamBuilding({ id }: { id: string | undefined }) {
   const [event, setEvent] = useState<RaceEventDetail | null>(null);
   const [driverNames, setDriverNames] = useState<Record<string, string>>({});
   const [driverIracingCustIds, setDriverIracingCustIds] = useState<Record<string, string | null>>({});
+  /** A member's roster profile id (the results are keyed by it). */
+  const [profileIdByUserId, setProfileIdByUserId] = useState<Record<string, string>>({});
+  /** The team's season (hours in the car per driver) for the driving-load panel; null until loaded. */
+  const [recap, setRecap] = useState<RecapStats | null>(null);
   const [rosterMembers, setRosterMembers] = useState<{ userId: string; name: string }[]>([]);
   const [rosterGuests, setRosterGuests] = useState<{ profileId: string; name: string }[]>([]);
   const [cars, setCars] = useState<Car[]>([]);
@@ -144,6 +152,9 @@ function EventTeamBuilding({ id }: { id: string | undefined }) {
       if (cancelled) return;
       setDriverNames(Object.fromEntries(drivers.map((d) => [d.userId, d.iracingName ?? d.displayName])));
       setDriverIracingCustIds(Object.fromEntries(drivers.map((d) => [d.userId, d.iracingCustomerId])));
+      setProfileIdByUserId(
+        Object.fromEntries(drivers.filter((d): d is typeof d & { userId: string } => d.userId !== null).map((d) => [d.userId, d.id])),
+      );
       // Only drivers with a portal account can be signed up; guest drivers (no userId) can't.
       setRosterMembers(
         drivers
@@ -164,6 +175,13 @@ function EventTeamBuilding({ id }: { id: string | undefined }) {
         if (!cancelled) setCars(list);
       })
       .catch(() => {});
+    // All teams, the current season (or the latest with results). A failure just leaves the panel empty.
+    recapApi
+      .get(null, null)
+      .then((stats) => {
+        if (!cancelled) setRecap(stats);
+      })
+      .catch(() => {});
     // Includes inactive teams so a crew already linked to one still shows its name and roster; the
     // panel filters inactive teams out of the picker itself.
     iracingTeamsApi
@@ -182,6 +200,35 @@ function EventTeamBuilding({ id }: { id: string | undefined }) {
   const guestSignups = useMemo(() => event?.guestSignups?.filter((g) => g.status !== 'CANCELLED') ?? [], [event]);
   const signedUpCount = activeSignups.length + guestSignups.length;
   const carNames = useMemo(() => Object.fromEntries(cars.map((c) => [c.id, c.name])), [cars]);
+
+  /** Everyone signed up (members and guests) with their crew, for the driving-load panel. */
+  const loadDrivers = useMemo<LoadDriver[]>(() => {
+    const guestTeam = new Map<string, string>();
+    for (const team of teams) {
+      for (const dummy of team.dummyDrivers ?? []) {
+        if (dummy.driverProfileId) guestTeam.set(dummy.driverProfileId, team.id);
+      }
+    }
+    return [
+      ...activeSignups.map((s) => ({
+        key: s.id,
+        name: driverNames[s.userId] ?? 'Unknown driver',
+        profileId: profileIdByUserId[s.userId] ?? null,
+        teamId: s.eventTeamId,
+      })),
+      ...guestSignups.map((g) => ({
+        key: `guest-${g.id}`,
+        name: g.driverName,
+        profileId: g.driverProfileId,
+        teamId: guestTeam.get(g.driverProfileId) ?? null,
+      })),
+    ];
+  }, [activeSignups, guestSignups, driverNames, profileIdByUserId, teams]);
+  const teamColorById = useMemo(
+    () => Object.fromEntries(teams.map((t, i) => [t.id, TEAM_GRID_COLORS[i % TEAM_GRID_COLORS.length]])),
+    [teams],
+  );
+  const teamRefs = useMemo(() => teams.map((t) => ({ id: t.id, name: t.name })), [teams]);
 
   /** Grid cell colour for a driver: their team's colour; drivers not on a team use the first-team
    * accent, as the board does. */
@@ -416,6 +463,14 @@ function EventTeamBuilding({ id }: { id: string | undefined }) {
           load();
           loadTeams();
         }}
+      />
+
+      <DrivingLoadPanel
+        drivers={loadDrivers}
+        recap={recap ? recap.drivers : null}
+        year={recap ? recap.year : null}
+        teams={teamRefs}
+        teamColors={teamColorById}
       />
 
       <section aria-labelledby="hav" className="cut flex flex-col gap-4 bg-ds-panel px-6 py-[22px]">

@@ -27,6 +27,7 @@ import { canManageTeam } from '../../lib/teamAccess';
 import { ordinal, rankTimeslots } from '../../lib/timeslotPreference';
 import type { Car } from '../../types/car';
 import {
+  EVENT_KIND_LABELS,
   SIM_LABELS,
   type EventSignup,
   type EventStatus,
@@ -452,6 +453,7 @@ export default function EventDetailPage() {
               <div className="flex flex-wrap gap-1.5">
                 <span className={`chip ${statusChip.className}`}>{statusChip.label}</span>
                 <span className="chip">{SIM_LABELS[event.sim]}</span>
+                {event.kind === 'WEEKLY' && <span className="chip">{EVENT_KIND_LABELS.WEEKLY}</span>}
               </div>
               <h1 className="m-0 text-[30px] font-extrabold leading-[1.05] text-ds-ink @xl:text-[40px]">
                 {event.title}

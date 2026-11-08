@@ -5,6 +5,11 @@ export type EventStatus = 'DRAFT' | 'PUBLISHED' | 'SIGNUPS_CLOSED' | 'CANCELLED'
 export type Sim = 'IRACING' | 'LMU';
 
 export const SIM_LABELS: Record<Sim, string> = { IRACING: 'iRacing', LMU: 'Le Mans Ultimate' };
+
+/** SPECIAL = a one-off event (sign-up post in the events channel); WEEKLY = a race of the weekly series
+ * (its sign-up is pinned in the weekly series channel). */
+export type EventKind = 'SPECIAL' | 'WEEKLY';
+export const EVENT_KIND_LABELS: Record<EventKind, string> = { SPECIAL: 'Special event', WEEKLY: 'Weekly series' };
 export type SignupStatus = 'CONFIRMED' | 'WAITLISTED' | 'CANCELLED';
 
 export interface EventTimeslot {
@@ -48,6 +53,8 @@ export interface RaceEvent {
   timeslots: EventTimeslot[];
   status: EventStatus;
   sim: Sim;
+  /** Special event or weekly series race; decides which Discord channel the sign-up post goes to. */
+  kind: EventKind;
   /** iRacing only: the session caps how full the tank can be filled, as a percent of the car's
    * max (decimal column, so a string like "98.00"). Null = no limit. */
   fuelLimitPercent: string | null;
@@ -151,6 +158,7 @@ export interface CreateEventInput {
   timeslots: string[];
   status?: EventStatus;
   sim?: Sim;
+  kind?: EventKind;
   fuelLimitPercent?: number | null;
   /** LMU only; null clears it. */
   tyreLimit?: number | null;

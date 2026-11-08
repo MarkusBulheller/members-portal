@@ -29,6 +29,12 @@ export interface EventTeam {
   formationLapFuelLiters: string | null;
   /** Tank size override in liters; null = use the car's own tank size. */
   fuelTankCapacityLiters: string | null;
+  /** Race mode: the plan page asks for confirmation before any change to the plan. */
+  raceMode: boolean;
+  /** Planned fuel saving in percent of every driver's fuel use per lap; null/0 = none. */
+  fuelSavePercent: string | null;
+  /** Laps of extra fuel the final stint carries on top of the laps to the flag; null = 1. */
+  finishMarginLaps: string | null;
   /** In-game clock time ("HH:MM") this crew's first stint starts at — iRacing sessions can be
    * configured to start at any sim time-of-day regardless of the real-world green-flag time. */
   simStartTimeOfDay: string | null;
@@ -51,6 +57,9 @@ export interface EventTeamSettingsInput {
   raceStartOffsetMinutes?: number | null;
   formationLapFuelLiters?: number | null;
   fuelTankCapacityLiters?: number | null;
+  fuelSavePercent?: number | null;
+  finishMarginLaps?: number | null;
+  raceMode?: boolean;
 }
 
 export interface CreateEventTeamInput extends EventTeamSettingsInput {

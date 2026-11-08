@@ -8,7 +8,7 @@ import { iracingSeriesApi } from '../../lib/api/iracingSeries';
 import { tracksApi } from '../../lib/api/tracks';
 import { parseSeriesWeeks, composedTrackName } from '../../lib/iracingSeriesWeeks';
 import { CAR_CLASSES_BY_SIM } from '../../types/carClass';
-import { SIM_LABELS, type CreateEventInput, type EventStatus, type Sim } from '../../types/event';
+import { EVENT_KIND_LABELS, SIM_LABELS, type CreateEventInput, type EventKind, type EventStatus, type Sim } from '../../types/event';
 import type { IracingSeriesSeason, IracingSeriesSeasonDetail } from '../../types/iracingSeries';
 import { formatRaceLength, RACE_LENGTH_PRESETS, type RaceLengthMinutes } from '../../types/raceLength';
 import type { Track } from '../../types/track';
@@ -22,6 +22,7 @@ const EMPTY: CreateEventInput = {
   timeslots: [''],
   status: 'DRAFT',
   sim: 'IRACING',
+  kind: 'SPECIAL',
   fuelLimitPercent: null,
   tyreLimit: null,
   iracingSeasonId: null,
@@ -135,6 +136,7 @@ export default function EventFormPage() {
         timeslots: event.timeslots.length > 0 ? event.timeslots.map((t) => toLocalInputValue(t.startsAt)) : [''],
         status: event.status,
         sim: event.sim,
+        kind: event.kind ?? 'SPECIAL',
         fuelLimitPercent: event.fuelLimitPercent !== null ? Number(event.fuelLimitPercent) : null,
         tyreLimit: event.tyreLimit ?? null,
         iracingSeasonId: event.iracingSeasonId,
@@ -231,6 +233,22 @@ export default function EventFormPage() {
             <h2 id="s1" className="h2">
               The race
             </h2>
+            <Group label="Event type">
+              <div className="flex flex-col gap-1.5">
+                <div className="seg seg-field self-start [&>button]:px-3.5" role="group" aria-label="Event type">
+                  {(Object.keys(EVENT_KIND_LABELS) as EventKind[]).map((kind) => (
+                    <button key={kind} type="button" aria-pressed={(form.kind ?? 'SPECIAL') === kind} onClick={() => setForm({ ...form, kind })}>
+                      {EVENT_KIND_LABELS[kind]}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-xs text-ds-dim">
+                  {(form.kind ?? 'SPECIAL') === 'WEEKLY'
+                    ? 'A race of the weekly series: when you publish it, it gets its own Discord channel with the sign-up pinned in it.'
+                    : 'A one-off event: the sign-up is posted in the events channel; make its own channel with the Discord channel button.'}
+                </span>
+              </div>
+            </Group>
             <Group label="Sim">
               <div className="seg seg-field self-start [&>button]:px-3.5">
                 {(Object.keys(SIM_LABELS) as Sim[]).map((sim) => (

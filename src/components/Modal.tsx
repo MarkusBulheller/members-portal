@@ -9,10 +9,13 @@ export default function Modal({
   onClose,
   children,
   initialFocusRef,
+  wide = false,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /** A wider dialog (for content such as a preview). */
+  wide?: boolean;
   /** Element to focus on open instead of the close button — e.g. a confirm dialog focusing
    * "Cancel" by default so Enter doesn't accidentally trigger a destructive action. */
   initialFocusRef?: RefObject<HTMLElement | null>;
@@ -70,7 +73,7 @@ export default function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="cut bg-ds-panel text-ds-ink max-w-lg w-full max-h-[85vh] overflow-y-auto p-6"
+        className={`cut bg-ds-panel text-ds-ink ${wide ? 'max-w-3xl' : 'max-w-lg'} w-full max-h-[85vh] overflow-y-auto p-6`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 mb-4">

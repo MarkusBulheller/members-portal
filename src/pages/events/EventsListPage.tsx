@@ -4,7 +4,7 @@ import EventsCalendar from '../../components/EventsCalendar';
 import { useAuth } from '../../context/AuthContext';
 import { eventsApi } from '../../lib/api/events';
 import { formatClock, formatDayShort } from '../../lib/eventFormatting';
-import type { RaceEvent } from '../../types/event';
+import { EVENT_KIND_LABELS, type EventKind, type RaceEvent } from '../../types/event';
 import { formatRaceLength } from '../../types/raceLength';
 
 /** Tag per status: label + chip modifier classes (see .chip in index.css). */
@@ -56,6 +56,7 @@ export default function EventsListPage() {
   const [events, setEvents] = useState<RaceEvent[] | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>(UPCOMING);
+  const [kindFilter, setKindFilter] = useState<'ALL' | EventKind>('ALL');
   const [view, setView] = useState<'list' | 'calendar'>('list');
 
   const [loadFailed, setLoadFailed] = useState(false);
@@ -89,9 +90,10 @@ export default function EventsListPage() {
       const matchesStatus =
         statusFilter === ALL ||
         (statusFilter === UPCOMING ? !PAST_STATUSES.includes(event.status) : event.status === statusFilter);
-      return matchesSearch && matchesStatus;
+      const matchesKind = kindFilter === 'ALL' || event.kind === kindFilter;
+      return matchesSearch && matchesStatus && matchesKind;
     });
-  }, [events, deferredSearch, statusFilter]);
+  }, [events, deferredSearch, statusFilter, kindFilter]);
 
   // Group the (already date-sorted) list by calendar month for the list view.
   const months = useMemo(() => {
@@ -180,6 +182,13 @@ export default function EventsListPage() {
               </button>
             ))}
           </div>
+          <div role="group" aria-label="Filter by event type" className="seg">
+            {(['ALL', 'SPECIAL', 'WEEKLY'] as const).map((value) => (
+              <button key={value} type="button" aria-pressed={kindFilter === value} onClick={() => setKindFilter(value)}>
+                {value === 'ALL' ? 'All types' : EVENT_KIND_LABELS[value]}
+              </button>
+            ))}
+          </div>
           <div role="group" aria-label="View" className="seg ml-auto">
             {(['list', 'calendar'] as const).map((v) => (
               <button key={v} type="button" onClick={() => setView(v)} aria-pressed={view === v}>
@@ -234,6 +243,11 @@ export default function EventsListPage() {
                         {event.sim === 'LMU' && (
                           <span className="slant bg-ds-control px-2 py-px text-[10px] font-extrabold text-ds-ink-soft">
                             LMU
+                          </span>
+                        )}
+                        {event.kind === 'WEEKLY' && (
+                          <span className="slant bg-ds-control px-2 py-px text-[10px] font-extrabold uppercase text-ds-ink-soft">
+                            Weekly
                           </span>
                         )}
                       </span>

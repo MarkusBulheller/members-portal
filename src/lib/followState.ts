@@ -34,6 +34,10 @@ export interface FollowStintView {
   endMs: number | null;
   started: boolean;
   status: FollowStintStatus;
+  /** Strategy link only: litres in the tank at the start of the stint. */
+  fuelLiters: number | null;
+  /** Strategy link only: tyres changed at the stop before this stint (0-4). */
+  tyres: number | null;
 }
 
 export interface ClockReadout {
@@ -76,6 +80,12 @@ export interface FollowView {
   changeover: boolean;
   /** Stints in the plan ("n of N"); never less than the list we were given. */
   stintCount: number;
+  /** The data came through the strategy link: fuel, tyres and drift are available. */
+  hasStrategy: boolean;
+  /** Seconds the latest started stint began after (+) or before (-) its plan (strategy link only). */
+  driftSeconds: number | null;
+  /** In-game clock time ("HH:MM") at the green flag, when the crew set one. */
+  simStartTimeOfDay: string | null;
   /** Clock readouts at `evaluatedAtMs`; re-evaluate with clockReadout()/stintTiming() for a later time. */
   clock: ClockReadout;
   timing: StintTiming;
@@ -110,6 +120,7 @@ export function computeFollowView(state: FollowState, nowMs: number): FollowView
 
   // ---- Stints, in plan order, with an effective end for each ---------------------------------
   const sorted = [...state.stints].sort((a, b) => a.number - b.number);
+  const strategyByNumber = new Map((state.strategy?.stints ?? []).map((s) => [s.number, s]));
   const rows = sorted.map((s, i) => {
     const startMs = parseMs(s.startsAt);
     const endMs = parseMs(s.endsAt) ?? parseMs(sorted[i + 1]?.startsAt) ?? (i === sorted.length - 1 ? raceEndMs : null);
@@ -121,6 +132,8 @@ export function computeFollowView(state: FollowState, nowMs: number): FollowView
       startMs,
       endMs,
       started: s.started === true,
+      fuelLiters: strategyByNumber.get(s.number)?.fuelLiters ?? null,
+      tyres: strategyByNumber.get(s.number)?.tyres ?? null,
     };
   });
 
@@ -222,6 +235,9 @@ export function computeFollowView(state: FollowState, nowMs: number): FollowView
     next: partial.next,
     changeover,
     stintCount: Math.max(state.stintCount, stints.length),
+    hasStrategy: state.strategy !== undefined,
+    driftSeconds: state.strategy?.driftSeconds ?? null,
+    simStartTimeOfDay: state.team.simStartTimeOfDay ?? null,
     clock: clockReadout(partial, nowMs),
     timing: stintTiming(partial, nowMs),
     nextBoundaryMs,
@@ -276,6 +292,78 @@ export function stintTiming(
     untilNextMs,
     untilChangeMs: candidates.length > 0 ? Math.min(...candidates) : null,
   };
+}
+
+/** The next pit stop: the driver coming in and what happens at the stop. */
+export interface StopInfo {
+  driverName: string;
+  /** Time to the stop (0 while the car is in the pit). */
+  untilMs: number;
+  /** The car is in the pit right now (a changeover: nobody on track). */
+  inPit: boolean;
+  /** Strategy link only. */
+  fuelLiters: number | null;
+  tyres: number | null;
+}
+
+/** The next driver change as a stop, or null when there is none (before the green flag, after the
+ * flag, or on the final stint). Cheap — call it every second with the corrected clock. */
+export function nextStopInfo(view: FollowView, nowMs: number): StopInfo | null {
+  if (view.phase !== 'live' || !view.next) return null;
+  if (!view.current && !view.changeover) return null;
+  const timing = stintTiming(view, nowMs);
+  return {
+    driverName: view.next.driverName,
+    untilMs: view.changeover ? 0 : (timing.untilChangeMs ?? 0),
+    inPit: view.changeover,
+    fuelLiters: view.next.fuelLiters,
+    tyres: view.next.tyres,
+  };
+}
+
+/** The upcoming stints from the next one on (each is a stop), for a short list. */
+export function upcomingStops(view: FollowView, count: number): FollowStintView[] {
+  const next = view.next;
+  const fromIdx = next ? view.stints.findIndex((s) => s.number === next.number) : -1;
+  if (fromIdx < 0) return [];
+  return view.stints.slice(fromIdx, fromIdx + count);
+}
+
+/** "74 L" (whole litres from 10 L up, one decimal below), or null when unknown. */
+export function formatFuel(liters: number | null): string | null {
+  if (liters === null || !Number.isFinite(liters)) return null;
+  return liters >= 10 ? `${Math.round(liters)} L` : `${liters.toFixed(1)} L`;
+}
+
+/** What happens at a stop besides the driver change: "Fuel only", "Fuel + 2 tyres", "Fuel + tyres". */
+export function formatStopWork(tyres: number | null): string | null {
+  if (tyres === null) return null;
+  if (tyres <= 0) return 'Fuel only';
+  if (tyres >= 4) return 'Fuel + tyres';
+  return `Fuel + ${tyres} ${tyres === 1 ? 'tyre' : 'tyres'}`;
+}
+
+/** The in-game clock at `nowMs`: the team's sim start time plus the time since the green flag
+ * (frozen at the start before it, and at the end after the flag). null without a sim start time. */
+export function simTimeOfDay(
+  view: Pick<FollowView, 'simStartTimeOfDay' | 'raceStartMs' | 'raceEndMs'>,
+  nowMs: number,
+): string | null {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(view.simStartTimeOfDay ?? '');
+  if (!match || view.raceStartMs === null) return null;
+  const end = view.raceEndMs ?? Number.POSITIVE_INFINITY;
+  const elapsedMinutes = (clamp(nowMs, view.raceStartMs, end) - view.raceStartMs) / 60_000;
+  const total = Math.round(Number(match[1]) * 60 + Number(match[2]) + elapsedMinutes);
+  const minutes = ((total % 1440) + 1440) % 1440;
+  return `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`;
+}
+
+/** "+2:10" (started later than planned) / "-0:45" (earlier); "0:00" when on plan. */
+export function formatDrift(seconds: number): string {
+  const rounded = Math.round(seconds);
+  const abs = Math.abs(rounded);
+  const text = `${Math.floor(abs / 60)}:${pad2(abs % 60)}`;
+  return rounded > 0 ? `+${text}` : rounded < 0 ? `-${text}` : text;
 }
 
 // ---- Formatting ----------------------------------------------------------------------------------

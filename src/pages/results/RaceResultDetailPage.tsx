@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import RaceResultBody, { RaceResultHero } from '../../components/RaceResultBody';
 import { formatRaceDate } from '../../components/RaceResultRow';
 import PersonalRaceSummary from '../../components/PersonalRaceSummary';
+import RaceReportModal from '../../components/RaceReportModal';
 import RaceResultShareCard from '../../components/RaceResultShareCard';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -29,6 +30,7 @@ export default function RaceResultDetailPage() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const shareCardRef = useRef<HTMLDivElement>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -157,6 +159,9 @@ export default function RaceResultDetailPage() {
                 {linkCopied ? 'Link Copied!' : result.shareToken ? 'Copy Link' : 'Share'}
               </button>
             )}
+            <button onClick={() => setReportOpen(true)} className="btn-secondary" aria-haspopup="dialog">
+              Race report
+            </button>
             <button onClick={() => void handleExport()} disabled={exporting} className="btn-secondary">
               {exporting ? 'Exporting...' : 'Export PNG'}
             </button>
@@ -179,6 +184,8 @@ export default function RaceResultDetailPage() {
           · {formatRaceDate(result.importedAt)}
         </p>
       )}
+
+      {reportOpen && <RaceReportModal resultId={result.id} isAdmin={user?.role === 'ADMIN'} onClose={() => setReportOpen(false)} />}
 
       <PersonalRaceSummary result={result} />
 

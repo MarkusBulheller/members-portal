@@ -5,6 +5,7 @@ import {
   type SetStateAction,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -17,7 +18,9 @@ import StintTimeline from '../../components/StintTimeline';
 import TeamPlanAvailabilityGrid from '../../components/TeamPlanAvailabilityGrid';
 import ReadinessTag from '../../components/ReadinessTag';
 import ShareLiveViewModal from '../../components/ShareLiveViewModal';
+import Switch from '../../components/Switch';
 import DiscordThreadButton from '../../components/DiscordThreadModal';
+import FuelStrategyPanel from '../../components/FuelStrategyPanel';
 import { useAuth } from '../../context/AuthContext';
 import { canManageTeam, isTeamLeadOnly } from '../../lib/teamAccess';
 import { useTeamLeadSet } from '../../lib/useTeamLeadSet';
@@ -29,6 +32,8 @@ import { eventsApi } from '../../lib/api/events';
 import { eventTeamDriverSettingsApi } from '../../lib/api/eventTeamDriverSettings';
 import { eventTeamDummyDriversApi } from '../../lib/api/eventTeamDummyDrivers';
 import { eventTeamStintsApi } from '../../lib/api/eventTeamStints';
+import { followLinkApi } from '../../lib/api/followLink';
+import { planBaselineApi } from '../../lib/api/planBaseline';
 import { eventTeamsApi } from '../../lib/api/eventTeams';
 import { iracingSeriesApi } from '../../lib/api/iracingSeries';
 import { type DriverColor, getDriverColor, orderedDriverIds } from '../../lib/driverColors';
@@ -44,6 +49,13 @@ import {
 } from '../../lib/tyres';
 import { formatCountdown, formatElapsed, liveClockSubline, outlineClassForDot, racePhase } from '../../lib/teamPlanClock';
 import { type LivePlanMessage, useLivePlanState } from '../../lib/useLivePlan';
+import {
+  DEFAULT_FINISH_MARGIN_LAPS,
+  type FinalStintPlan,
+  planFinalStint,
+  savedFuelUsage,
+} from '../../lib/fuelStrategy';
+import { formatDrift } from '../../lib/followState';
 import { isReadinessPhase } from '../../lib/readiness';
 import { useReadiness } from '../../lib/useReadiness';
 import type { CarDetail } from '../../types/car';
@@ -52,6 +64,7 @@ import type { CreateEventTeamInput, EventTeam, EventTeamSettingsInput } from '..
 import type { EventTeamDriverSettings } from '../../types/eventTeamDriverSettings';
 import type { EventTeamDummyDriver } from '../../types/eventTeamDummyDriver';
 import type { EventTeamStint } from '../../types/eventTeamStint';
+import type { PlanBaseline } from '../../types/follow';
 import type { WeatherForecastPoint } from '../../types/iracingWeatherForecast';
 
 /** One computed row of the stint schedule — everything derived from a stint plus its live inputs
@@ -67,6 +80,18 @@ interface PlanRow {
   weatherPoint: WeatherForecastPoint | null;
   isWetStint: boolean;
   availabilityWarning: boolean | undefined;
+  /** Fuel use per lap and lap time this stint was sized with (after the planned fuel saving), when
+   * known — the final stop is re-sized from them. */
+  fuelUsagePerLap?: number | null;
+  lapTimeSeconds?: number | null;
+  /** Set on the stint that closes the race when it takes only the fuel it needs. */
+  finalStint?: FinalStintPlan;
+  /** Litres in the tank at the start of the stint (what the crew fills to); null when not computable. */
+  fuelLiters?: number | null;
+  /** When the stint would have started / ended on the plan as it stands, ignoring every recorded
+   * "Start now" — what the original-plan snapshot (the baseline) is made of. */
+  plannedStartMs?: number | null;
+  plannedEndMs?: number | null;
 }
 
 type SettingType = 'number' | 'laptime' | 'time';
@@ -100,8 +125,40 @@ const SETTING_FIELDS: SettingField[] = [
   { key: 'fuelUsagePerLapLiters', label: 'Fuel usage / lap', unit: 'L', step: '0.01', type: 'number' },
   { key: 'formationLapFuelLiters', label: 'Formation lap fuel', unit: 'L', step: '0.01', type: 'number' },
   { key: 'fuelTankCapacityLiters', label: 'Fuel tank size', unit: 'L', step: '0.1', type: 'number' },
+  { key: 'fuelSavePercent', label: 'Fuel saving', unit: '% less per lap', step: '0.1', type: 'number' },
+  { key: 'finishMarginLaps', label: 'Finish margin', unit: 'laps of fuel', step: '0.5', type: 'number' },
   { key: 'simStartTimeOfDay', label: 'Sim start time', unit: 'HH:MM', type: 'time' },
 ];
+
+/** The stint table never scrolls sideways: it uses the layout that fits the space it has.
+ *  - full: every column. Needs the widths of the columns other than Driver (iRacing; LMU's Tyres column
+ *    is 50 px wider): 76 + 208 + 100 + 72 + 100 + 164 + 60 + 268 = 1048, plus the Driver column.
+ *  - medium: Sim time and Driver time move under the time (76 + 208 + 100 + 164 + 60 + 268 = 876, plus Driver).
+ *  - cards: each stint is a compact card. */
+type StintTableTier = 'full' | 'medium' | 'cards';
+const STINT_TABLE_FULL_WIDTH = 1048;
+const STINT_TABLE_MEDIUM_WIDTH = 876;
+const DRIVER_COLUMN_MIN = 190;
+const DRIVER_COLUMN_MAX = 340;
+
+/** The width of an element, kept up to date. Returns a callback ref (the element may mount late). */
+function useElementWidth(): [(node: HTMLDivElement | null) => void, number] {
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    if (!node) return;
+    // Measured right away (before the first paint) so the table never flashes the wrong layout.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setWidth(node.getBoundingClientRect().width);
+    const observer = new ResizeObserver((entries) => setWidth(entries[0]?.contentRect.width ?? 0));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node]);
+  return [setNode, width];
+}
+
+/** The plan is published this long after the last change. */
+const PUBLISH_PLAN_DEBOUNCE_MS = 1500;
 
 const TIME_OF_DAY_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -540,6 +597,8 @@ interface StintPatch {
 }
 
 interface StintRowProps {
+  /** Which table layout is in use (see StintTableTier). */
+  tier: StintTableTier;
   row: PlanRow;
   index: number;
   isLast: boolean;
@@ -557,6 +616,8 @@ interface StintRowProps {
   driverTimezone: string | null;
   planDrivers: PlanDriver[];
   driverNames: Record<string, string>;
+  /** How late this started stint began against the original plan, in seconds (+ = behind); null if not started or no original plan. */
+  vsPlanSeconds: number | null;
   onStintChange: (stint: EventTeamStint, patch: StintPatch) => void;
   onStartNow: (stint: EventTeamStint) => void;
   /** Start the stint that is running right now over, at this moment. */
@@ -598,6 +659,8 @@ const StintRow = memo(function StintRow({
   driverTimezone,
   planDrivers,
   driverNames,
+  vsPlanSeconds,
+  tier,
   onStintChange,
   onStartNow,
   onRestartNow,
@@ -614,8 +677,19 @@ const StintRow = memo(function StintRow({
   onDragEndRow,
   onDropRow,
 }: StintRowProps) {
-  const { stint, startMs, startOffsetMinutes, durationMinutes, pitBeforeMinutes, estLaps, weatherPoint, isWetStint, availabilityWarning } =
-    row;
+  const {
+    stint,
+    startMs,
+    startOffsetMinutes,
+    durationMinutes,
+    pitBeforeMinutes,
+    estLaps,
+    weatherPoint,
+    isWetStint,
+    availabilityWarning,
+    finalStint,
+  } = row;
+  const vsPlan = vsPlanSeconds;
   const endMs = startMs !== null ? startMs + durationMinutes * 60_000 : null;
   const simStart = simStartTimeOfDay ? addMinutesToTimeOfDay(simStartTimeOfDay, startOffsetMinutes) : null;
   const driverStart = startMs !== null && driverTimezone ? formatInTimezone(startMs, driverTimezone) : null;
@@ -636,7 +710,7 @@ const StintRow = memo(function StintRow({
         e.preventDefault();
         onDropRow(stint.id, dropEdge);
       }}
-      className={`row-hover border-t border-ds-line align-middle ${isActive ? 'bg-w2w-red/[0.12]' : ''} ${isLocked ? 'opacity-[0.55]' : ''} ${
+      className={`row-hover border-t border-ds-line align-middle ${tier === 'cards' ? 'flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-2' : ''} ${isActive ? 'bg-w2w-red/[0.12]' : ''} ${isLocked ? 'opacity-[0.55]' : ''} ${
         dragging ? 'opacity-40' : ''
       } ${
         dropEdge === 'before'
@@ -675,10 +749,15 @@ const StintRow = memo(function StintRow({
           )}
           {index + 1}
         </span>
+        {isActive && (
+          <span className="slant mt-1 block w-fit bg-on-accent px-2.5 py-0.5 text-[10px] font-extrabold uppercase leading-4 text-[#111113]">
+            Live
+          </span>
+        )}
       </td>
-      <td className="py-2.5 px-2">
+      <td className={tier === 'cards' ? 'min-w-[220px] flex-1 py-2.5 px-2' : 'py-2.5 px-2'}>
         {isAdmin ? (
-          <div className="relative inline-flex items-center">
+          <div className="relative flex w-full items-center">
             <span className={`absolute left-3 w-2.5 h-2.5 shrink-0 ${color.dot}`} aria-hidden="true" />
             <select
               value={stint.driverUserId ?? ''}
@@ -689,7 +768,8 @@ const StintRow = memo(function StintRow({
                 onStintChange(stint, { driverUserId: e.target.value || null });
               }}
               disabled={busy || isLocked}
-              className="input min-h-9 w-auto min-w-[150px] appearance-none pl-8 pr-8 text-[13px] font-semibold"
+              title={driverLabel}
+              className="input min-h-9 w-full min-w-0 appearance-none pl-8 pr-7 text-[13px] font-semibold"
             >
               <option value="">Unassigned</option>
               {planDrivers.map((d) => (
@@ -726,6 +806,27 @@ const StintRow = memo(function StintRow({
           {startMs !== null && endMs !== null ? `${formatClockMs(startMs)} to ${formatClockMs(endMs)}` : '—'}
         </span>{' '}
         <span className="text-ds-muted">({formatMinutesSeconds(durationMinutes)})</span>
+        {tier !== 'full' && (simStart || driverStart) && (
+          <p className="num m-0 mt-0.5 text-[11px] font-normal text-ds-muted">
+            {[simStart ? `Sim ${simStart}` : null, driverStart].filter(Boolean).join(' · ')}
+          </p>
+        )}
+        {vsPlan !== null && (
+          <p
+            className={`num m-0 mt-0.5 text-[11px] font-semibold ${vsPlan >= 5 ? 'text-ds-warn' : vsPlan <= -5 ? 'text-[#4ade80]' : 'text-ds-muted'}`}
+            title="How much later this stint began than in the original plan"
+          >
+            {formatDrift(vsPlan)} vs plan
+          </p>
+        )}
+        {finalStint && (
+          <p className="m-0 mt-1 whitespace-normal text-[11px] font-normal text-ds-muted">
+            Final stint: fill{' '}
+            <span className="font-semibold text-ds-ink-soft">{finalStint.fuelLiters.toFixed(1)} L</span> ({finalStint.laps} laps +{' '}
+            {finalStint.marginLaps} margin)
+            {finalStint.refuelSavedMinutes >= 1 / 60 && <>, refuel {formatMinutesSeconds(finalStint.refuelSavedMinutes)} shorter</>}
+          </p>
+        )}
       </td>
       <td className="py-2.5 px-2">
         {index === 0 ? (
@@ -779,8 +880,12 @@ const StintRow = memo(function StintRow({
           </button>
         )}
       </td>
-      <td className="py-2.5 px-2 text-ds-ink-soft whitespace-nowrap tabular-nums">{simStart ?? '—'}</td>
-      <td className="py-2.5 px-2 text-ds-ink-soft whitespace-nowrap tabular-nums">{driverStart ?? '—'}</td>
+      {tier === 'full' && (
+        <>
+          <td className="py-2.5 px-2 text-ds-ink-soft whitespace-nowrap tabular-nums">{simStart ?? '—'}</td>
+          <td className="py-2.5 px-2 text-ds-ink-soft whitespace-nowrap tabular-nums">{driverStart ?? '—'}</td>
+        </>
+      )}
       <td className="py-2.5 px-2 whitespace-nowrap">
         <div
           className="cut-xs inline-flex gap-0.5 bg-ds-field p-[3px]"
@@ -821,13 +926,8 @@ const StintRow = memo(function StintRow({
         </div>
       </td>
       <td className="num py-2.5 px-2 text-right text-base">{estLaps ?? '—'}</td>
-      <td className="py-2.5 pl-3 pr-5 text-right whitespace-nowrap">
+      <td className={`py-2.5 pl-2 pr-3 text-right whitespace-nowrap ${tier === 'cards' ? 'ml-auto' : ''}`}>
         <div className="inline-flex items-center justify-end gap-1">
-          {isActive && (
-            <span className="slant mr-1 inline-block bg-on-accent px-3.5 py-1 text-[11px] font-extrabold uppercase text-[#111113]">
-              Live
-            </span>
-          )}
           {isAdmin && isNext && !isLocked && (
             <button
               type="button"
@@ -857,7 +957,7 @@ const StintRow = memo(function StintRow({
               title="Clear the recorded start time"
               className="cut-xs inline-flex h-8 items-center px-2.5 text-[11px] font-extrabold uppercase text-ds-muted hover:bg-ds-control-hover hover:text-ds-ink disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ds-muted"
             >
-              Undo start
+              Undo
             </button>
           )}
           {isAdmin && showReorder && (
@@ -958,6 +1058,10 @@ interface PlanInputs {
   fuelUsagePerLap: number | null;
   tankCapacityLiters: number | null;
   formationLapFuelLiters: number;
+  /** Planned fuel saving in percent of every driver's fuel use per lap. */
+  fuelSavePercent: number;
+  /** Laps of extra fuel the closing stint carries. */
+  finishMarginLaps: number;
   planDriverById: ReadonlyMap<string, PlanDriver>;
 }
 
@@ -998,6 +1102,8 @@ function computePlan(input: PlanInputs): PlanResult {
     fuelUsagePerLap,
     tankCapacityLiters,
     formationLapFuelLiters,
+    fuelSavePercent,
+    finishMarginLaps,
     planDriverById,
   } = input;
 
@@ -1015,19 +1121,27 @@ function computePlan(input: PlanInputs): PlanResult {
   // instead of continuing the theoretical plan — a stint running short or long naturally shifts
   // everything after it.
   let cursorMs = raceStartMs;
+  // The same cascade without any recorded "Start now": where each stint was planned to begin, so
+  // the overlay can show how far the race runs from the plan.
+  let plannedCursorMs = raceStartMs;
   const rows: PlanRow[] = stints.map((stint, index) => {
     const frozenRow = frozen.get(stint.id);
     let baseRow: PlanRow;
+    let plannedStartMs: number | null = null;
+    let plannedDurationMinutes = 0;
 
     if (frozenRow) {
       // Locked: replay the snapshot verbatim rather than recomputing anything from current
       // settings/driver/weather inputs.
       baseRow = frozenRow;
+      plannedStartMs = frozenRow.plannedStartMs ?? frozenRow.startMs;
+      plannedDurationMinutes = frozenRow.durationMinutes;
     } else {
       // No pit stop before the very first stint of the race — every later stint pays whatever pit
       // time its own tyreChange toggle calls for (a "splash and go" skips the tyre-change portion).
       const pitBeforeMinutes = index === 0 ? 0 : refuelMinutes + driveMinutes + tyreStopMinutes(stint);
       const theoreticalStartMs = cursorMs !== null ? cursorMs + pitBeforeMinutes * 60_000 : null;
+      plannedStartMs = plannedCursorMs !== null ? plannedCursorMs + pitBeforeMinutes * 60_000 : null;
       const actualStartMs = stint.actualStartAt ? new Date(stint.actualStartAt).getTime() : null;
       const startMs = actualStartMs ?? theoreticalStartMs;
       // Sim Time / weather sampling stay measured from the race's own start, not from wherever the
@@ -1054,7 +1168,10 @@ function computePlan(input: PlanInputs): PlanResult {
         : (driverLapTimeDry ?? lapTimeDrySeconds);
 
       const driverFuelUsage = parseDecimal(driverSettingsForStint?.fuelUsagePerLapLiters ?? null);
-      const effectiveFuelUsage = driverFuelUsage ?? fuelUsagePerLap;
+      const normalFuelUsage = driverFuelUsage ?? fuelUsagePerLap;
+      // A driver's own saving (0 = cannot save) replaces the team's.
+      const savePercent = parseDecimal(driverSettingsForStint?.fuelSavePercent ?? null) ?? fuelSavePercent;
+      const effectiveFuelUsage = normalFuelUsage !== null ? savedFuelUsage(normalFuelUsage, savePercent) : null;
       // The formation lap burns fuel before the race (and this stint's fuel window) even starts —
       // only the first stint pays for it out of its own tank; every later stint begins from a
       // full tank at pit exit, no formation lap involved.
@@ -1096,6 +1213,16 @@ function computePlan(input: PlanInputs): PlanResult {
           : (fuelTankDurationMinutes ?? storedDurationMinutes);
 
       const estLaps = effectiveLapTime && effectiveLapTime > 0 ? Math.floor((durationMinutes * 60) / effectiveLapTime) : null;
+      plannedDurationMinutes = fuelTankDurationMinutes ?? storedDurationMinutes;
+      // What the crew fills the tank to for this stint: the fuel for its laps (plus the formation lap
+      // on the first stint), never more than the tank holds.
+      const fuelLiters =
+        effectiveFuelUsage !== null && effectiveLapTime && effectiveLapTime > 0 && tankCapacityLiters !== null
+          ? Math.min(
+              tankCapacityLiters,
+              effectiveFuelUsage * ((durationMinutes * 60) / effectiveLapTime) + (index === 0 ? formationLapFuelLiters : 0),
+            )
+          : null;
 
       const planDriver = stint.driverUserId ? planDriverById.get(stint.driverUserId) : undefined;
       const hours =
@@ -1120,10 +1247,16 @@ function computePlan(input: PlanInputs): PlanResult {
         weatherPoint,
         isWetStint,
         availabilityWarning,
+        fuelUsagePerLap: effectiveFuelUsage,
+        lapTimeSeconds: effectiveLapTime ?? null,
+        fuelLiters,
+        plannedStartMs,
+        plannedEndMs: plannedStartMs !== null ? plannedStartMs + plannedDurationMinutes * 60_000 : null,
       };
     }
 
     cursorMs = baseRow.startMs !== null ? baseRow.startMs + baseRow.durationMinutes * 60_000 : cursorMs;
+    plannedCursorMs = plannedStartMs !== null ? plannedStartMs + plannedDurationMinutes * 60_000 : plannedCursorMs;
     return baseRow;
   });
 
@@ -1145,6 +1278,43 @@ function computePlan(input: PlanInputs): PlanResult {
       const naturalEndMs = closingRow.startMs + closingRow.durationMinutes * 60_000;
       if (naturalEndMs > targetEndMs) {
         rows[closingIndex] = { ...closingRow, durationMinutes: Math.max(0, (targetEndMs - closingRow.startMs) / 60_000) };
+
+        // The closing stint needs less than a full tank: the car takes only the fuel to reach the
+        // flag (plus the margin), which shortens its pit stop and so starts the stint earlier. Not
+        // for a stint that has really started or a locked one — those are facts, not a plan.
+        const prev = closingIndex > 0 ? rows[closingIndex - 1] : null;
+        const stint = closingRow.stint;
+        if (
+          prev !== null &&
+          prev.startMs !== null &&
+          tankCapacityLiters !== null &&
+          !frozen.has(stint.id) &&
+          !stint.actualStartAt &&
+          closingRow.fuelUsagePerLap &&
+          closingRow.lapTimeSeconds
+        ) {
+          const prevEndMs = prev.startMs + prev.durationMinutes * 60_000;
+          const final = planFinalStint({
+            availableMinutes: (targetEndMs - prevEndMs) / 60_000,
+            fixedPitMinutes: driveMinutes + tyreStopMinutes(stint),
+            fullRefuelMinutes: refuelMinutes,
+            tankLiters: tankCapacityLiters,
+            fuelPerLapLiters: closingRow.fuelUsagePerLap,
+            lapTimeSeconds: closingRow.lapTimeSeconds,
+            marginLaps: finishMarginLaps,
+          });
+          if (final !== null) {
+            rows[closingIndex] = {
+              ...closingRow,
+              startMs: targetEndMs - final.durationMinutes * 60_000,
+              durationMinutes: final.durationMinutes,
+              pitBeforeMinutes: final.pitMinutes,
+              estLaps: final.laps,
+              finalStint: final,
+              fuelLiters: final.fuelLiters,
+            };
+          }
+        }
       }
     }
   }
@@ -1319,6 +1489,23 @@ export default function EventTeamPlanPage() {
     stintsLatestRef.current = run;
     return run.then(() => (stintsLatestRef.current === run ? undefined : (stintsLatestRef.current ?? undefined)));
   }, [id, teamId, markLoaded]);
+  // The original plan ("baseline") that "vs plan" is measured against. Null until saved.
+  const [baseline, setBaseline] = useState<PlanBaseline | null>(null);
+  const [baselineLoaded, setBaselineLoaded] = useState(false);
+  const loadBaseline = useCallback(() => {
+    if (!id || !teamId) return;
+    planBaselineApi
+      .get(id, teamId)
+      .then((data) => {
+        setBaseline(data);
+        setBaselineLoaded(true);
+      })
+      .catch(() => undefined);
+  }, [id, teamId]);
+  useEffect(() => {
+    loadBaseline();
+  }, [loadBaseline]);
+
   const loadDriverSettings = useCallback(() => {
     if (!id || !teamId) return;
     const token = ++settingsReqRef.current;
@@ -1460,6 +1647,8 @@ export default function EventTeamPlanPage() {
       raceStartOffsetMinutes: team.raceStartOffsetMinutes ?? '',
       formationLapFuelLiters: team.formationLapFuelLiters ?? '',
       fuelTankCapacityLiters: team.fuelTankCapacityLiters ?? '',
+      fuelSavePercent: team.fuelSavePercent ?? '',
+      finishMarginLaps: team.finishMarginLaps ?? '',
       simStartTimeOfDay: team.simStartTimeOfDay ?? '',
     };
     // Keep whatever the local user is mid-way through typing; everything else follows the server.
@@ -1650,6 +1839,7 @@ export default function EventTeamPlanPage() {
       else void loadStints().catch(() => undefined);
     }
     if (all || kinds.has('team') || kinds.has('event')) loadTeam(true);
+    if (all || kinds.has('team')) loadBaseline();
     if (all || kinds.has('drivers') || kinds.has('event')) refreshEvent();
     if (all || kinds.has('drivers')) {
       loadDummyDrivers();
@@ -1666,14 +1856,36 @@ export default function EventTeamPlanPage() {
   const handleDriverInputBlur = (
     e: FocusEvent<HTMLInputElement>,
     userId: string,
-    field: 'lapTimeDrySeconds' | 'lapTimeWetSeconds' | 'fuelUsagePerLapLiters',
+    field: 'lapTimeDrySeconds' | 'lapTimeWetSeconds' | 'fuelUsagePerLapLiters' | 'fuelSavePercent',
   ) => {
     setLockedDriverInput(null);
     // Untouched since it was rendered: nothing to save — and writing it back would overwrite a
     // teammate's newer value with this stale copy.
     if (e.target.value === e.target.defaultValue) return;
-    void handleDriverSettingChange(userId, field, e.target.value);
+    const input = e.target;
+    void handleDriverSettingChange(userId, field, input.value).then((saved) => {
+      // Declined in race mode: put the field back to what is saved.
+      if (saved === false) input.value = input.defaultValue;
+    });
   };
+
+  // Race mode: while it is on, every change to the plan has to be confirmed first, so an accidental
+  // click in a long race can't reshuffle it. The guard reads the latest stints / names through a ref
+  // so the memoised row callbacks keep their identity.
+  const raceMode = team?.raceMode === true;
+  const planGuardRef = useRef({ raceMode: false, stints: [] as EventTeamStint[], names: {} as Record<string, string> });
+  useEffect(() => {
+    planGuardRef.current = { raceMode, stints, names: driverNames };
+  });
+  const confirmPlanEdit = useCallback(
+    async (what: string): Promise<boolean> => {
+      if (!planGuardRef.current.raceMode) return true;
+      return confirm(what, { title: 'Race mode is on', confirmLabel: 'Make the change' });
+    },
+    [confirm],
+  );
+  /** 1-based number of a stint in the current plan, for the confirmation texts. */
+  const stintNumber = useCallback((stintId: string) => planGuardRef.current.stints.findIndex((s) => s.id === stintId) + 1, []);
 
   const chosenTimeslot = useMemo(
     () => event?.timeslots.find((t) => t.id === team?.timeslotId) ?? null,
@@ -1708,6 +1920,18 @@ export default function EventTeamPlanPage() {
       value = numOrNull(raw);
     }
 
+    // In race mode a changed value needs a confirmation; declined, the field goes back to what is saved.
+    const saved = team ? (team as unknown as Record<string, unknown>)[field.key] : null;
+    const unchanged =
+      field.type === 'time'
+        ? (saved ?? null) === (value ?? null)
+        : (parseDecimal((saved as string | null | undefined) ?? null) ?? null) === (value as number | null);
+    if (!unchanged && !(await confirmPlanEdit(`Change "${field.label}"? This changes the plan.`))) {
+      dirtySettingsRef.current.delete(field.key);
+      setTeam((current) => (current ? { ...current } : current));
+      return;
+    }
+
     settingsSavingRef.current = true;
     setBusy(true);
     setError(null);
@@ -1727,12 +1951,53 @@ export default function EventTeamPlanPage() {
     }
   }
 
+  /** Switches race mode for the whole crew (everyone on this plan page sees it change). */
+  async function handleToggleRaceMode(next: boolean) {
+    if (!id || !teamId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setTeam(await eventTeamsApi.update(id, teamId, { raceMode: next }));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to change race mode');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Saves the planned fuel saving (null clears it); the plan re-sizes its stints from it. */
+  async function handleApplyFuelSave(percent: number | null) {
+    if (!id || !teamId) return;
+    const what = percent === null ? 'Clear the planned fuel saving?' : `Plan on a ${percent}% fuel saving? Stint lengths change.`;
+    if (!(await confirmPlanEdit(what))) return;
+    settingsSavingRef.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await eventTeamsApi.update(id, teamId, { fuelSavePercent: percent });
+      dirtySettingsRef.current.delete('fuelSavePercent');
+      setTeam(updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to save the fuel saving');
+    } finally {
+      settingsSavingRef.current = false;
+      setBusy(false);
+      setSettingsEditTick((n) => n + 1);
+    }
+  }
+
   async function handleFuelLimitBlur() {
     if (!id) return;
     const raw = fuelLimitInput.trim();
     const value = raw === '' ? null : Number(raw);
     if (value !== null && (!Number.isFinite(value) || value < 1 || value > 100)) {
       setError('Fuel Limit: enter a percentage between 1 and 100, or leave it blank for no limit.');
+      return;
+    }
+    const savedFuelLimit = fuelLimitPercentSaved != null ? Number(fuelLimitPercentSaved) : null;
+    if (value !== savedFuelLimit && !(await confirmPlanEdit('Change the fuel limit? This changes the plan.'))) {
+      fuelLimitDirtyRef.current = false;
+      setFuelLimitInput(savedFuelLimit !== null ? String(savedFuelLimit) : '');
       return;
     }
     settingsSavingRef.current = true;
@@ -1764,6 +2029,11 @@ export default function EventTeamPlanPage() {
       setSettingsEditTick((n) => n + 1);
       return;
     }
+    if (!(await confirmPlanEdit('Change the tyre limit? This changes the plan.'))) {
+      tyreLimitDirtyRef.current = false;
+      setTyreLimitInput(event?.tyreLimit != null ? String(event.tyreLimit) : '');
+      return;
+    }
     settingsSavingRef.current = true;
     setBusy(true);
     setError(null);
@@ -1782,12 +2052,12 @@ export default function EventTeamPlanPage() {
 
   async function handleDriverSettingChange(
     userId: string,
-    field: 'lapTimeDrySeconds' | 'lapTimeWetSeconds' | 'fuelUsagePerLapLiters',
+    field: 'lapTimeDrySeconds' | 'lapTimeWetSeconds' | 'fuelUsagePerLapLiters' | 'fuelSavePercent',
     raw: string,
-  ) {
+  ): Promise<boolean | void> {
     if (!id || !teamId) return;
     let value: number | null;
-    if (field === 'fuelUsagePerLapLiters') {
+    if (field === 'fuelUsagePerLapLiters' || field === 'fuelSavePercent') {
       value = numOrNull(raw);
     } else if (raw.trim() === '') {
       value = null;
@@ -1799,6 +2069,15 @@ export default function EventTeamPlanPage() {
       }
       value = parsed;
     }
+
+    const fieldLabel = {
+      lapTimeDrySeconds: 'the dry lap time',
+      lapTimeWetSeconds: 'the wet lap time',
+      fuelUsagePerLapLiters: 'the fuel use per lap',
+      fuelSavePercent: 'the fuel saving',
+    }[field];
+    const who = planGuardRef.current.names[userId] ?? 'this driver';
+    if (!(await confirmPlanEdit(`Change ${fieldLabel} for ${who}? This changes the plan.`))) return false;
 
     setBusy(true);
     setError(null);
@@ -1909,9 +2188,13 @@ export default function EventTeamPlanPage() {
   const maxTankLiters = tankOverrideLiters ?? carInfo.tankCapacityLiters;
   const fuelLimitPercent = event?.sim === 'IRACING' ? (numOrNull(fuelLimitInput) ?? 100) : 100;
   const tankCapacityLiters = maxTankLiters !== null ? (maxTankLiters * fuelLimitPercent) / 100 : null;
+  const fuelSavePercent = Math.min(Math.max(numOrNull(settings.fuelSavePercent ?? '') ?? 0, 0), 50);
+  const finishMarginLaps = Math.max(numOrNull(settings.finishMarginLaps ?? '') ?? DEFAULT_FINISH_MARGIN_LAPS, 0);
+  // Stints are sized on the fuel use after the planned saving.
+  const plannedFuelUsagePerLap = fuelUsagePerLap !== null ? savedFuelUsage(fuelUsagePerLap, fuelSavePercent) : null;
   const maxStintLaps =
-    tankCapacityLiters && fuelUsagePerLap && fuelUsagePerLap > 0
-      ? Math.floor(tankCapacityLiters / fuelUsagePerLap)
+    tankCapacityLiters && plannedFuelUsagePerLap && plannedFuelUsagePerLap > 0
+      ? Math.floor(tankCapacityLiters / plannedFuelUsagePerLap)
       : null;
   const isLmu = event?.sim === 'LMU';
   const tyreLimit = isLmu ? (event?.tyreLimit ?? null) : null;
@@ -1946,6 +2229,7 @@ export default function EventTeamPlanPage() {
   const timeslotStartMs = chosenTimeslot ? new Date(chosenTimeslot.startsAt).getTime() : null;
   const raceStartMs = timeslotStartMs !== null ? timeslotStartMs + raceStartOffsetMinutes * 60_000 : null;
   const targetEndMs = raceStartMs !== null ? raceStartMs + raceLengthMinutes * 60_000 : null;
+  const raceLiveNow = raceStartMs !== null && targetEndMs !== null && nowMs >= raceStartMs && nowMs < targetEndMs;
 
   // The schedule cascade — memoised on its real inputs only. The clock (nowMs) is deliberately not
   // one of them: it never changes a row, only which rows count as active/locked.
@@ -1970,6 +2254,8 @@ export default function EventTeamPlanPage() {
         fuelUsagePerLap,
         tankCapacityLiters,
         formationLapFuelLiters,
+        fuelSavePercent,
+        finishMarginLaps,
         planDriverById,
       }),
     [
@@ -1990,6 +2276,8 @@ export default function EventTeamPlanPage() {
       fuelUsagePerLap,
       tankCapacityLiters,
       formationLapFuelLiters,
+      fuelSavePercent,
+      finishMarginLaps,
       planDriverById,
     ],
   );
@@ -2028,6 +2316,111 @@ export default function EventTeamPlanPage() {
       if (justLocked) frozen.set(row.stint.id, row);
     });
   }, [rows, stints, nowMs, inputsLoaded, loaded]);
+
+  // Publishes the schedule computed above (times, fuel, tyres) for the follow page and the
+  // OBS overlay. The server only knows each stint's stored duration while this page recalculates it
+  // live, so the overlay shows what the planner shows only if the planner tells it. Debounced; only
+  // someone who can edit the plan publishes; nothing is sent while the plan is unchanged.
+  const publishedPlanKeyRef = useRef('');
+  useEffect(() => {
+    if (!id || !teamId || !canManage || !inputsLoaded || rows.length === 0) return;
+    if (rows.some((row) => row.startMs === null)) return;
+    const payload = {
+      stints: rows.map((row, index) => ({
+        id: row.stint.id,
+        startsAt: new Date(row.startMs as number).toISOString(),
+        endsAt: new Date((row.startMs as number) + row.durationMinutes * 60_000).toISOString(),
+        fuelLiters: row.fuelLiters != null ? Math.round(row.fuelLiters * 10) / 10 : null,
+        tyres: index === 0 ? null : tyresChangedOf(row.stint),
+      })),
+    };
+    const key = JSON.stringify(payload);
+    if (key === publishedPlanKeyRef.current) return;
+    const timer = setTimeout(() => {
+      publishedPlanKeyRef.current = key;
+      void followLinkApi.publishPlan(id, teamId, payload).catch(() => {
+        publishedPlanKeyRef.current = ''; // try again on the next change
+      });
+    }, PUBLISH_PLAN_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [id, teamId, canManage, inputsLoaded, rows]);
+
+  // The plan as a baseline: every stint's planned start and end, ignoring recorded "Start now"s.
+  // null while any stint has no planned time (no timeslot yet).
+  const baselineStints = useMemo(() => {
+    if (rows.length === 0) return null;
+    const out: { id: string; startsAt: string; endsAt: string }[] = [];
+    for (const row of rows) {
+      if (row.plannedStartMs == null || row.plannedEndMs == null) return null;
+      out.push({
+        id: row.stint.id,
+        startsAt: new Date(row.plannedStartMs).toISOString(),
+        endsAt: new Date(row.plannedEndMs).toISOString(),
+      });
+    }
+    return out;
+  }, [rows]);
+
+  // Saved automatically once the race has started (and not after it ended), by whoever has the plan
+  // page open: the plan as it was at the green flag. Planning edits after that don't move it.
+  const baselineSavingRef = useRef(false);
+  const raceOver = targetEndMs !== null && nowMs >= targetEndMs;
+  const raceStarted = raceLiveNow || stints.some((s) => s.actualStartAt);
+  useEffect(() => {
+    if (!id || !teamId || !canManage || !inputsLoaded || !baselineLoaded || baseline !== null) return;
+    if (!raceStarted || raceOver || baselineStints === null || baselineSavingRef.current) return;
+    baselineSavingRef.current = true;
+    planBaselineApi
+      .set(id, teamId, { stints: baselineStints, source: 'AUTO' })
+      .then(setBaseline)
+      .catch(() => undefined)
+      .finally(() => {
+        baselineSavingRef.current = false;
+      });
+  }, [id, teamId, canManage, inputsLoaded, baselineLoaded, baseline, raceStarted, raceOver, baselineStints]);
+
+  // How late each started stint began against the original plan (seconds; + = behind).
+  const vsPlanByStint = useMemo(() => {
+    const result = new Map<string, number>();
+    if (!baseline) return result;
+    const plannedStart = new Map(baseline.stints.map((s) => [s.id, Date.parse(s.startsAt)]));
+    for (const stint of stints) {
+      const planned = plannedStart.get(stint.id);
+      if (stint.actualStartAt && planned !== undefined && !Number.isNaN(planned)) {
+        result.set(stint.id, Math.round((new Date(stint.actualStartAt).getTime() - planned) / 1000));
+      }
+    }
+    return result;
+  }, [baseline, stints]);
+  // The latest started stint's number: the time lost so far.
+  const latestVsPlan = useMemo(() => {
+    let latest: number | null = null;
+    for (const stint of stints) {
+      const value = vsPlanByStint.get(stint.id);
+      if (value !== undefined) latest = value;
+    }
+    return latest;
+  }, [stints, vsPlanByStint]);
+
+  async function handleSaveBaseline() {
+    if (!id || !teamId || baselineStints === null) return;
+    const ok = await confirm(
+      baseline
+        ? 'Save the plan as it is now as the original plan? "Vs plan" then counts from this plan.'
+        : 'Save the plan as it is now as the original plan?',
+      { title: raceMode ? 'Race mode is on' : 'Original plan', confirmLabel: 'Save original plan' },
+    );
+    if (!ok) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setBaseline(await planBaselineApi.set(id, teamId, { stints: baselineStints, source: 'MANUAL' }));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to save the original plan');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // The instants at which anything time-dependent flips (a stint starts/ends, the race starts/ends)
   // either side of nowMs — a single scan, only recomputed when the plan or nowMs changes.
@@ -2188,6 +2581,7 @@ export default function EventTeamPlanPage() {
 
   const handleAddStint = useCallback(async () => {
     if (!id || !teamId) return;
+    if (!(await confirmPlanEdit('Add a stint at the end of the plan?'))) return;
     setBusy(true);
     setError(null);
     try {
@@ -2200,11 +2594,25 @@ export default function EventTeamPlanPage() {
     } finally {
       setBusy(false);
     }
-  }, [id, teamId, maxStintMinutes, loadStints]);
+  }, [id, teamId, maxStintMinutes, loadStints, confirmPlanEdit]);
 
   const handleStintChange = useCallback(
     async (stint: EventTeamStint, patch: StintPatch) => {
       if (!id || !teamId) return;
+      const n = stintNumber(stint.id);
+      let what = `Change stint ${n}?`;
+      if ('driverUserId' in patch) {
+        what = patch.driverUserId
+          ? `Put ${planGuardRef.current.names[patch.driverUserId] ?? 'this driver'} on stint ${n}?`
+          : `Take the driver off stint ${n}?`;
+      } else if ('wetOverride' in patch) {
+        what = `Set stint ${n} to ${patch.wetOverride === null ? 'automatic weather' : patch.wetOverride ? 'wet' : 'dry'}?`;
+      } else if ('tyreChange' in patch || 'tyresChanged' in patch) {
+        what = `Change the tyres at the stop before stint ${n}?`;
+      } else if ('durationMinutes' in patch) {
+        what = `Change the length of stint ${n}?`;
+      }
+      if (!(await confirmPlanEdit(what))) return;
       setError(null);
       try {
         await eventTeamStintsApi.update(id, teamId, stint.id, patch);
@@ -2213,12 +2621,13 @@ export default function EventTeamPlanPage() {
         setError(err instanceof ApiError ? err.message : 'Failed to update stint');
       }
     },
-    [id, teamId, loadStints],
+    [id, teamId, loadStints, confirmPlanEdit, stintNumber],
   );
 
   const handleMoveStint = useCallback(
     async (stint: EventTeamStint, direction: 'up' | 'down') => {
       if (!id || !teamId) return;
+      if (!(await confirmPlanEdit(`Move stint ${stintNumber(stint.id)} ${direction}?`))) return;
       setBusy(true);
       setError(null);
       try {
@@ -2230,7 +2639,7 @@ export default function EventTeamPlanPage() {
         setBusy(false);
       }
     },
-    [id, teamId],
+    [id, teamId, confirmPlanEdit, stintNumber],
   );
 
   const handleToggleStartNow = useCallback(
@@ -2294,6 +2703,7 @@ export default function EventTeamPlanPage() {
       const insertAt = edge === 'before' ? target : target + 1;
       const to = from < insertAt ? insertAt - 1 : insertAt;
       if (to === from) return;
+      if (!(await confirmPlanEdit(`Move stint ${from + 1} to position ${to + 1}?`))) return;
 
       // Show the new order straight away; the server's renumbered list replaces it, or the
       // current list is reloaded if the move is refused.
@@ -2315,13 +2725,14 @@ export default function EventTeamPlanPage() {
         setBusy(false);
       }
     },
-    [drag.id, id, teamId, stints, loadStints],
+    [drag.id, id, teamId, stints, loadStints, confirmPlanEdit],
   );
 
   const handleDeleteStint = useCallback(
     async (stint: EventTeamStint) => {
       if (!id || !teamId) return;
-      if (!(await confirm('Delete this stint? This cannot be undone.', { confirmLabel: 'Delete' }))) return;
+      const prefix = planGuardRef.current.raceMode ? 'Race mode is on. ' : '';
+      if (!(await confirm(`${prefix}Delete this stint? This cannot be undone.`, { confirmLabel: 'Delete' }))) return;
       setBusy(true);
       setError(null);
       try {
@@ -2335,6 +2746,24 @@ export default function EventTeamPlanPage() {
     },
     [id, teamId, confirm, loadStints],
   );
+
+  // The Driver column is as wide as the longest driver name in the dropdown (plus the colour dot and
+  // the arrow), so full names are always readable; capped so a huge name can't take the whole table.
+  const driverColumnWidth = useMemo(() => {
+    const longest = planDrivers.reduce((max, d) => {
+      const name = (driverNames[d.userId] ?? 'Unknown driver') + (d.kind !== 'member' ? ` (${d.kind})` : '');
+      return Math.max(max, name.length);
+    }, 'Unassigned'.length);
+    return Math.min(DRIVER_COLUMN_MAX, Math.max(DRIVER_COLUMN_MIN, Math.round(longest * 7.6 + 76)));
+  }, [planDrivers, driverNames]);
+
+  // Which layout the stint table uses for the width it has (it never scrolls sideways).
+  const [stintTableRef, stintTableWidth] = useElementWidth();
+  const stintTier: StintTableTier = useMemo(() => {
+    const extra = (isLmu ? 50 : 0) + driverColumnWidth;
+    if (stintTableWidth === 0 || stintTableWidth >= STINT_TABLE_FULL_WIDTH + extra) return 'full';
+    return stintTableWidth >= STINT_TABLE_MEDIUM_WIDTH + extra ? 'medium' : 'cards';
+  }, [stintTableWidth, isLmu, driverColumnWidth]);
 
   // Void-returning wrappers: the memoised StintRow takes plain callbacks.
   const onStintChange = useCallback((stint: EventTeamStint, patch: StintPatch) => void handleStintChange(stint, patch), [handleStintChange]);
@@ -2459,7 +2888,7 @@ export default function EventTeamPlanPage() {
     if (!id || !teamId || maxStintMinutes === null) return;
     const canAssignDrivers = raceStartMs !== null && timeslotStartMs !== null && planDrivers.length > 0;
     const ok = await confirm(
-      `Generate a full stint plan for the whole race?${stints.length > 0 ? ' This replaces the current stint list.' : ''}${
+      `${raceMode ? 'Race mode is on. ' : ''}Generate a full stint plan for the whole race?${stints.length > 0 ? ' This replaces the current stint list.' : ''}${
         canAssignDrivers
           ? ' Drivers will be assigned automatically based on availability and their profile settings.'
           : ' No drivers will be assigned — this team has no timeslot or no signed-up drivers yet.'
@@ -2629,8 +3058,19 @@ export default function EventTeamPlanPage() {
           </span>
         </div>
         {!canManage && <span className="chip chip-muted self-center">View only</span>}
+        {!canManage && raceMode && <span className="chip chip-accent self-center">Race mode</span>}
         {canManage && (
           <>
+            <label
+              className="flex cursor-pointer items-center gap-2.5 self-center"
+              title="While on, every change to the plan asks for confirmation first."
+            >
+              <Switch label="Race mode" checked={raceMode} disabled={busy} onChange={(next) => void handleToggleRaceMode(next)} />
+              <span className="flex flex-col leading-tight">
+                <span className="text-[13px] font-bold">Race mode</span>
+                {!raceMode && raceLiveNow && <span className="text-[11px] text-ds-warn">Race is live: protect the plan</span>}
+              </span>
+            </label>
             <button
               type="button"
               onClick={() => setShareLiveOpen(true)}
@@ -2846,12 +3286,42 @@ export default function EventTeamPlanPage() {
       )}
       </section>
 
+      {tankCapacityLiters !== null &&
+        fuelUsagePerLap !== null &&
+        fuelUsagePerLap > 0 &&
+        lapTimeDrySeconds !== null &&
+        lapTimeDrySeconds > 0 &&
+        raceLengthMinutes > 0 && (
+          <FuelStrategyPanel
+            raceLengthMinutes={raceLengthMinutes}
+            pitMinutes={pitMinutes}
+            tankLiters={tankCapacityLiters}
+            formationLapFuelLiters={formationLapFuelLiters}
+            lapTimeSeconds={lapTimeDrySeconds}
+            marginLaps={finishMarginLaps}
+            normalFuelPerLap={fuelUsagePerLap}
+            appliedSavePercent={fuelSavePercent}
+            currentStops={Math.max(displayRows.length - 1, 0)}
+            drivers={planDrivers.map((d) => ({
+              name: driverNames[d.userId] ?? 'Unknown driver',
+              fuelPerLapLiters: parseDecimal(driverSettingsByUserId[d.userId]?.fuelUsagePerLapLiters ?? null),
+              savePercentOverride: parseDecimal(driverSettingsByUserId[d.userId]?.fuelSavePercent ?? null),
+            }))}
+            canManage={canManage}
+            busy={busy}
+            onApply={(percent) => void handleApplyFuelSave(percent)}
+          />
+        )}
+
       <section aria-labelledby="pd-title" className="cut bg-ds-panel pt-[22px] pb-1.5 flex flex-col gap-3">
       <div className="flex flex-col gap-1 px-6">
         <h2 id="pd-title" className="h2">
           Per-driver pace &amp; fuel
         </h2>
-        <span className="text-[13px] text-ds-muted">Leave blank to use the team values above.</span>
+        <span className="text-[13px] text-ds-muted">
+          Leave blank to use the team values above. A driver&apos;s own fuel saving replaces the team&apos;s; enter 0 for a
+          driver who can&apos;t save fuel.
+        </span>
         {isAdmin && (
           <span className="text-[13px] text-ds-muted">
             Team lead: can plan this crew for this event only (stints, settings, guest drivers, availability).
@@ -2873,7 +3343,8 @@ export default function EventTeamPlanPage() {
                 <th className="py-1.5 pl-6 pr-2">Driver</th>
                 <th className="py-1.5 px-2">Lap time (dry)</th>
                 <th className="py-1.5 px-2">Lap time (wet)</th>
-                <th className={`py-1.5 pl-2 ${teamLeadSet.active ? 'pr-2' : 'pr-6'}`}>Fuel / lap</th>
+                <th className="py-1.5 px-2">Fuel / lap</th>
+                <th className={`py-1.5 pl-2 ${teamLeadSet.active ? 'pr-2' : 'pr-6'}`}>Fuel saving (%)</th>
                 {teamLeadSet.active && <th className="py-1.5 pl-2 pr-6">Team lead</th>}
               </tr>
             </thead>
@@ -2916,7 +3387,7 @@ export default function EventTeamPlanPage() {
                         className="input min-h-10 w-[140px] tabular-nums"
                       />
                     </td>
-                    <td className={`py-2.5 pl-2 ${teamLeadSet.active ? 'pr-2' : 'pr-6'}`}>
+                    <td className="py-2.5 px-2">
                       <input
                         key={driverInputKey(`${s.userId}:fuel`, ds?.fuelUsagePerLapLiters)}
                         type="number"
@@ -2928,6 +3399,22 @@ export default function EventTeamPlanPage() {
                         onBlur={(e) => handleDriverInputBlur(e, s.userId, 'fuelUsagePerLapLiters')}
                         disabled={!canManage}
                         aria-label={`${driverNames[s.userId] ?? 'Driver'} fuel per lap`}
+                        className="input min-h-10 w-[110px] tabular-nums"
+                      />
+                    </td>
+                    <td className={`py-2.5 pl-2 ${teamLeadSet.active ? 'pr-2' : 'pr-6'}`}>
+                      <input
+                        key={driverInputKey(`${s.userId}:save`, ds?.fuelSavePercent)}
+                        type="number"
+                        min={0}
+                        max={50}
+                        step="0.1"
+                        defaultValue={ds?.fuelSavePercent ?? ''}
+                        placeholder={fuelSavePercent > 0 ? `Team ${fuelSavePercent}` : 'Team value'}
+                        onFocus={() => lockDriverInput(`${s.userId}:save`, ds?.fuelSavePercent)}
+                        onBlur={(e) => handleDriverInputBlur(e, s.userId, 'fuelSavePercent')}
+                        disabled={!canManage}
+                        aria-label={`${driverNames[s.userId] ?? 'Driver'} fuel saving percent`}
                         className="input min-h-10 w-[110px] tabular-nums"
                       />
                     </td>
@@ -3108,6 +3595,33 @@ export default function EventTeamPlanPage() {
           )}
         </div>
 
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-5 text-[13px] text-ds-muted">
+          {baseline ? (
+            <span>
+              Original plan saved {formatClockMs(Date.parse(baseline.takenAt))} (
+              {baseline.source === 'AUTO' ? 'automatically once the race had started' : 'by hand'})
+              {latestVsPlan !== null && (
+                <>
+                  {' · '}
+                  <span
+                    className={`num font-bold ${latestVsPlan >= 5 ? 'text-ds-warn' : latestVsPlan <= -5 ? 'text-[#4ade80]' : 'text-ds-ink'}`}
+                    title="How much later the latest started stint began than in the original plan"
+                  >
+                    {formatDrift(latestVsPlan)} vs plan
+                  </span>
+                </>
+              )}
+            </span>
+          ) : (
+            <span>No original plan saved yet: it is saved automatically once the race starts.</span>
+          )}
+          {canManage && baselineStints !== null && (
+            <button type="button" onClick={() => void handleSaveBaseline()} disabled={busy} className="btn-secondary btn-sm">
+              {baseline ? 'Save original plan again' : 'Save original plan now'}
+            </button>
+          )}
+        </div>
+
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-5 text-[13px] text-ds-muted">
           <p>
             Planned: {formatDuration(plannedMinutes)} of {formatDuration(raceLengthMinutes)} race length
@@ -3153,24 +3667,30 @@ export default function EventTeamPlanPage() {
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px] border-collapse text-[13px]">
-          <thead>
+      <div ref={stintTableRef} className="overflow-x-clip">
+        <table className={`w-full text-[13px] ${stintTier === 'cards' ? 'block' : 'table-fixed border-collapse'}`}>
+          <thead className={stintTier === 'cards' ? 'hidden' : undefined}>
             <tr className="text-left text-[11px] font-bold uppercase text-ds-dim">
               <th className="py-1.5 pl-5 pr-3 w-[76px]">#</th>
               <th className="py-1.5 px-2">Driver</th>
-              <th className="py-1.5 px-2">Time</th>
+              <th className="py-1.5 px-2 w-[208px]">Time</th>
               <th className={`py-1.5 px-2 ${isLmu ? 'w-[150px]' : 'w-[100px]'}`}>Tyres</th>
-              <th className="py-1.5 px-2 w-20">Sim time</th>
-              <th className="py-1.5 px-2 w-28">Driver time</th>
-              <th className="py-1.5 px-2 w-[204px]">Weather</th>
-              <th className="py-1.5 px-2 w-[76px] text-right">Est. laps</th>
-              <th className="py-1.5 pl-3 pr-5 w-[132px]">
+              {stintTier === 'full' && (
+                <>
+                  <th className="py-1.5 px-2 w-[72px]">Sim time</th>
+                  <th className="py-1.5 px-2 w-[100px]">Driver time</th>
+                </>
+              )}
+              <th className="py-1.5 px-2 w-[164px]">Weather</th>
+              <th className="py-1.5 px-2 w-[60px] text-right">Est. laps</th>
+              {/* Fixed, and wide enough for the fullest row (Restart now + Undo + Delete), so the
+                  columns never resize when the buttons of a row change. */}
+              <th className="py-1.5 pl-2 pr-3 w-[268px]">
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className={stintTier === 'cards' ? 'block' : undefined}>
             {displayRows.length === 0 ? (
               <tr className="border-t border-ds-line">
                 <td colSpan={9} className="py-4 px-5 text-ds-muted text-[13px]">
@@ -3205,6 +3725,8 @@ export default function EventTeamPlanPage() {
                     driverLabel={stint.driverUserId ? (driverNames[stint.driverUserId] ?? 'Unknown driver') : 'Unassigned'}
                     isAdmin={canManage}
                     busy={busy}
+                    vsPlanSeconds={vsPlanByStint.get(stint.id) ?? null}
+                    tier={stintTier}
                     isLmu={isLmu}
                     simStartTimeOfDay={team.simStartTimeOfDay}
                     driverTimezone={stint.driverUserId ? (driverTimezones[stint.driverUserId] ?? null) : null}
